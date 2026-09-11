@@ -32,9 +32,10 @@ export class ChaseCamera {
     const s = Math.min(1, Math.hypot(car.vx ?? 0, car.vz ?? 0) / car.maxSpeed), boost = car.boostPower ?? 0
     const cam = car.spec?.cam ?? { dist: 1, height: 1 }                                       // bigger vehicles push the camera back and up
     const dist = (C.dist + C.distPerSpeed * s + C.distBoost * boost) * cam.dist, height = (C.height + C.heightPerSpeed * s) * cam.height
-    out.set(car.x + Math.sin(yaw) * dist, car.y + height, car.z + Math.cos(yaw) * dist)          // behind = opposite of forward (-sin, -cos)
+    const cy = car.vy != null ? car.airY : car.y                                                 // follow the car up when it flies
+    out.set(car.x + Math.sin(yaw) * dist, cy + height, car.z + Math.cos(yaw) * dist)             // behind = opposite of forward (-sin, -cos)
     const f = car.forward()
-    look.set(car.x + f.x * C.lookAhead, car.y + C.lookHeight, car.z + f.z * C.lookAhead)
+    look.set(car.x + f.x * C.lookAhead, cy + C.lookHeight, car.z + f.z * C.lookAhead)
     return C.fov + C.fovPerSpeed * s + C.fovBoost * boost
   }
 

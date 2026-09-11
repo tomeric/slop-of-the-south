@@ -80,7 +80,12 @@ export class Combat {
   // damage); landings and blades in motion resolve here too
   abilities(car, input, dt) {
     this.cd = Math.max(0, this.cd - dt)
-    if (car.landed) { car.landed = false; this.explode(car.x, car.y + 0.5, car.z, JUMP.r, JUMP.dmg, true, false); this.effects.shake(0.5) }
+    if (car.landed) {                                                                       // a hop off a hill puffs dust; the monster truck's hard landings crush
+      car.landed = false
+      if (car.spec.ability.kind === "jump" && car.landImpact > 4) this.explode(car.x, car.y + 0.5, car.z, JUMP.r, JUMP.dmg, true, false)
+      else if (car.landImpact > 2) this.effects.dust(car.x, car.y + 0.4, car.z, 1 + car.landImpact * 0.3)
+      this.effects.shake(Math.min(0.6, car.landImpact / 12))
+    }
     this.moveBlades(dt)
     const a = car.spec.ability
     if (a.kind === "none" || !input.ability || this.cd > 0) return

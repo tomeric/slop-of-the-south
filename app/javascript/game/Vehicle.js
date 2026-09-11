@@ -12,7 +12,12 @@ import { makeVehicleMesh } from "game/Vehicles"
 // the nitro meter; road pads refill it. The frame runs integrate() (input → speed, heading, position), lets Combat
 // push the car out of whatever it hit, then settle() (suspension: terrain contact and body attitude). The vehicle
 // spec (Vehicles.js) sets the size, the physics constants and the mesh; setSpec swaps all of it in place.
+// The car can leave the ground: over a crest at speed, when the ground falls away faster than gravity could bring
+// the car down, or on the monster truck's jump. In the air it keeps its velocity, throttle and steering do next to
+// nothing, the nose follows the arc, and the landing compresses the suspension.
 const SUBSTEP = 1 / 120
+const GRAVITY = 12                   // m/s²: heavier than Earth, so hops stay snappy
+const TAKEOFF = 0.06                 // metres the ground must drop below the ballistic path in one frame to launch
 
 export class Vehicle {
   constructor(spawn, spec) {
@@ -70,6 +75,7 @@ export class Vehicle {
     this.boosting = false; this.burstT = 0; this.boostPower = 0
     this.accLong = 0; this.accLat = 0; this.wheelAngle = 0
     this.vy = null; this.airY = 0; this.landed = false                 // airborne: vertical speed and height, null on the ground
+    this.groundVy = 0; this.landImpact = 0                              // how fast the ground rises under the car; the last landing's speed
     this.kickX = 0; this.kickZ = 0                                      // knockback, world m/s, dies away in a second
     this._dt = 1 / 60; this._speedOut = 0
     this.susp.reset()
@@ -93,7 +99,7 @@ export class Vehicle {
     this.x += this.kickX * dt; this.z += this.kickZ * dt
     const fade = Math.exp(-dt * 2.3)
     this.kickX *= fade; this.kickZ *= fade
-    if (this.vy !== null) { this.vy -= 20 * dt; this.airY += this.vy * dt }
+    if (this.vy !== null) { this.vy -= GRAVITY * dt; this.airY += this.vy * dt }
     this.accLong = expDamp(this.accLong, (this.speed - v0) / dt, T.susp.accelSmooth, dt)
     this.accLat = expDamp(this.accLat, -this.speed * this.yawRate, T.susp.accelSmooth, dt)   // +right
     this._speedOut = this.speed
@@ -117,13 +123,14 @@ export class Vehicle {
     if (input.brake) a -= v > 0.5 ? this.brakeForce : this.accel * 0.6            // brake, then reverse
     if (input.handbrake) a -= (this.drifting ? D.handbrakeDecel : 12) * Math.sign(v)
     if (this.drifting) a -= D.slideDrag * Math.sign(v)
+    if (this.vy !== null) a = -0.1 * drag                                            // wheels in the air: nothing to push against
     v += a * h
     if (v > cap) v = expDamp(v, cap, T.boost.overspeedBleed, h)
     v = Math.max(v, -this.maxSpeed * T.car.reverseFrac)
     if (Math.abs(v) < 0.05 && !input.throttle && !input.brake) v = 0
 
     // steering: less lock at speed, more in a drift, smoothed; the tyres can only supply maxLatAccel of cornering
-    const lock = this.maxSteer * (this.drifting ? D.steerLockBonus : 1) / (1 + Math.abs(v) / 18)
+    const lock = this.maxSteer * (this.drifting ? D.steerLockBonus : 1) / (1 + Math.abs(v) / 18) * (this.vy !== null ? 0.15 : 1)
     this.steer = expDamp(this.steer, input.steer * lock, T.car.steerRate, h)
     const kinFree = (v / this.wheelbase) * Math.tan(this.steer)                      // what the front wheels ask for
     const maxYaw = D.maxLatAccel / Math.max(Math.abs(v), 1)
@@ -196,19 +203,34 @@ export class Vehicle {
     this.boostPower = expDamp(this.boostPower, this.boosting ? 1 : 0, B.powerSmooth, h)
   }
 
-  // Terrain contact and body attitude via the suspension; car.y stays the ground height under the centre, and an
-  // airborne car floats its mesh above it until it comes back down
+  // Terrain contact and body attitude via the suspension; car.y stays the ground height under the centre. A grounded
+  // car launches when the ground drops away below the arc its vertical speed would carry it on; an airborne car
+  // floats its mesh above the ground, nose along the arc, until it comes back down onto the springs.
   settle(heightAt) {
-    this.susp.update(this, heightAt, this._dt)
-    if (this.vy === null) return
-    if (this.airY <= this.y && this.vy < 0) { this.vy = null; this.landed = true }
-    else this.mesh.position.y += this.airY - this.y
+    const dt = this._dt, prevY = this.y
+    this.susp.update(this, heightAt, dt)
+    if (this.vy === null) {
+      const groundVy = (this.y - prevY) / dt
+      const predicted = prevY + this.groundVy * dt - 0.5 * GRAVITY * dt * dt
+      if (Math.abs(this.y - prevY) < 5 && Math.hypot(this.vx, this.vz) > 6 && this.y < predicted - TAKEOFF) {
+        this.vy = Math.max(0, this.groundVy); this.airY = predicted
+      }
+      this.groundVy = expDamp(this.groundVy, groundVy, 30, dt)
+      return
+    }
+    if (this.airY <= this.y && this.vy < 0) {
+      this.landImpact = -this.vy; this.vy = null; this.landed = true; this.groundVy = 0
+      this.susp.hv = Math.min(this.susp.hv, -this.landImpact * 0.6)                   // the springs take the hit
+      return
+    }
+    this.mesh.position.y += this.airY - this.y
+    this.mesh.rotation.x = Math.atan2(this.vy, Math.max(4, Math.hypot(this.vx, this.vz))) * 0.6
   }
 
   get smoking() { return this.drifting && Math.abs(this.slip) > T.fx.smokeSlip }
 
   state() {
-    return { x: this.x, y: this.y, z: this.z, yaw: this.yaw, speed: this.speed, brake: this.braking, drift: this.smoking, boost: this.boostPower > 0.3, vehicle: this.spec.id }
+    return { x: this.x, y: this.vy === null ? this.y : this.airY, z: this.z, yaw: this.yaw, speed: this.speed, brake: this.braking, drift: this.smoking, boost: this.boostPower > 0.3, vehicle: this.spec.id }
   }
 }
 
