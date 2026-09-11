@@ -109,14 +109,15 @@ export class Round {
     actie.textContent = this.canAct() ? "Actie: klaar" : `Actie over ${this.countdown()}`
   }
 
-  // the route as a bar: the float where it is, and an icon per stretch of route for the obstacles still standing
-  // there (the commonest kind, with a count when there are more), the cleared part tinted behind the float
+  // the route as a vertical bar up the right of the screen, start at the bottom: the float where it is, an icon per
+  // stretch of route for the obstacles still standing there (the commonest kind, with a count when there are more),
+  // the cleared part tinted behind the float
   routeBar() {
     const { route, routeKop, routeGedaan, routeIconen, routeOptocht } = this.els
     const r = this.round, len = r.path.length, p = this.progress()
     route.hidden = false
     routeKop.textContent = `Ronde ${r.id} · ${r.arena.name}`
-    routeGedaan.style.width = routeOptocht.style.left = `${(p * 100).toFixed(1)}%`
+    routeGedaan.style.height = routeOptocht.style.bottom = `${(p * 100).toFixed(1)}%`
     const buckets = new Map()
     for (const o of this.obstacles.values()) {
       if (o.state === "gone") continue
@@ -127,7 +128,7 @@ export class Round {
     }
     const html = [...buckets].sort((a, b) => a[0] - b[0]).map(([i, b]) => {
       const kind = Object.entries(b.kinds).sort((a, c) => c[1] - a[1])[0][0]
-      return `<span class="route-icoon${b.n > 1 ? " meer" : ""}" style="left:${((i + 0.5) / SLOTS * 100).toFixed(1)}%" data-n="${b.n}">${ICON[kind] ?? ICON.m}</span>`
+      return `<span class="route-icoon${b.n > 1 ? " meer" : ""}" style="bottom:${((i + 0.5) / SLOTS * 100).toFixed(1)}%" data-n="${b.n}">${ICON[kind] ?? ICON.m}</span>`
     }).join("")
     if (html !== this.routeHtml) { this.routeHtml = html; routeIconen.innerHTML = html }
   }
