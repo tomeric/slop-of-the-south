@@ -45,6 +45,7 @@ const SUB = {
   6:  { detail: ["mottle", "mown"] }, 7: { detail: ["mown"] },        // hoogstam, laagstam boomgaard
   8:  { detail: ["klinker"] }, 9: { detail: ["grid"] }, 10: { shade: -0.04, detail: ["asphalt"] },
   11: { detail: ["gravel"] }, 12: { shade: 0.08, detail: ["sand"] }, 13: { detail: ["grasgrid"] }, 14: { shade: -0.08, detail: ["bark"] },
+  15: { color: "#6f8f5f", detail: ["mown"] },                         // kunststof: a sports pitch
 }
 
 // darken (< 0) or lighten (> 0) a hex colour
@@ -67,7 +68,7 @@ export function paintCover(cover, subs = []) {
     if (!palette) continue
     const start = waterLevel(entry) === undefined ? 1 : 2          // water: [code, level, rings…]
     const h = hash(entry[start])
-    ctx.fillStyle = shade(palette[h % palette.length], over?.shade)   // stable per polygon: fields keep their colour
+    ctx.fillStyle = shade(over?.color ?? palette[h % palette.length], over?.shade)   // stable per polygon: fields keep their colour
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity
     ctx.beginPath()
     for (let r = start; r < entry.length; r++) {

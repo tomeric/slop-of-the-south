@@ -34,7 +34,8 @@ class LandCover < ApplicationRecord
     "grind" => 11, "gravel" => 11, "schelpen" => 11, "puin" => 11,
     "zand" => 12, "zandverstuiving" => 12,
     "grasklinkers" => 13,
-    "boomschors" => 14
+    "boomschors" => 14,
+    "kunststof" => 15
   }.freeze
 
   # Water that gets a flat surface at its own level and a hollowed bed: lakes, harbours, rivers, canals and the wider

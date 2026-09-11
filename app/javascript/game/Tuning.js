@@ -79,8 +79,8 @@ export const TUNING = {
     reeds: { spacing: 4, offsetMin: 0.5, offsetMax: 1.5 },                  // along water edges, pushed onto the land
     flatten: { pad: 0.9, squashY: 0.25, squashXZ: 1.3, puffs: 3, puffColor: 0x6f9a44 },
     classes: {                                                              // by land-cover code: m² per grass tuft (dens) and per bush, and which tufts
-      1:  { dens: 2.2, mix: ["grass", "grass", "grass", "flower", "dry"] },  // grasland agrarisch
-      2:  { dens: 1.6, mix: ["grass", "grass", "dry", "flower"], bush: 2500 },
+      1:  { dens: 2.2, mix: ["grass", "grass", "grass", "grass", "flower"] },  // grasland agrarisch
+      2:  { dens: 1.6, mix: ["grass", "grass", "grass", "dry", "flower"], bush: 2500 },
       3:  { dens: 2.5, mix: ["grass", "grass", "flower"], bush: 600 },       // groenvoorziening
       4:  { dens: 12, mix: ["dry"] },                                        // bouwland: stubble between the crop rows
       5:  { dens: 2.5, mix: ["grass"] },
@@ -96,7 +96,7 @@ export const TUNING = {
       16: { dens: 1.6, mix: ["reed", "grass"] },                             // moeras
       17: { dens: 2.5, mix: ["grass", "dry"] },                              // kwelder
       18: { dens: 4, mix: ["dune"] },                                        // duin
-      19: { bush: 2.2, hedge: true, margin: 0.3 },                           // haag: a dense row of dark bushes
+      19: { bush: 1.5, hedge: true, margin: 0.3 },                           // haag: a dense row of dark bushes
       20: { bush: 900 },                                                     // erf: bushes in the yards, no grass
       24: { dens: 8, mix: ["dry"] },
       25: { dens: 2, mix: ["grass", "grass", "flower", "dry"], margin: 0.3 },  // berm: right up to the road

@@ -15,7 +15,7 @@ const CELL_PX = 128, ATLAS_W = 512, ATLAS_H = 256, MARGIN = 4
 const KINDS = ["grass", "dry", "flower", "heather", "reed", "dune", "fern"]
 const HEIGHT = { grass: [0.5, 0.85], dry: [0.45, 0.8], flower: [0.55, 0.9], heather: [0.35, 0.55], reed: [1.5, 2.1], dune: [0.6, 1.0], fern: [0.6, 0.95] }
 const LOOK = {                                          // dark root, light tip, blades, relative height
-  grass: ["#41702f", "#79a845", 11, 0.8], dry: ["#8a7c44", "#b8a566", 10, 0.75], flower: ["#41702f", "#77a244", 11, 0.7],
+  grass: ["#41702f", "#79a845", 11, 0.8], dry: ["#7d7340", "#a89a5c", 10, 0.75], flower: ["#41702f", "#77a244", 11, 0.7],
   heather: ["#55663a", "#8a6f8a", 12, 0.5], reed: ["#66753a", "#b0a065", 5, 1.0], dune: ["#94996a", "#d8d4aa", 12, 0.85], fern: ["#37622b", "#5a8a39", 6, 0.75],
 }
 const BUSH_GREENS = [0x3f6b2f, 0x4a7a35, 0x557f3c, 0x6b8a3a]
@@ -239,8 +239,8 @@ function placeBushes(tile, ids, P = T.ground) {
     const code = +codeStr
     const take = (px, pz, r1, r2, r3, r4) => {
       if (nearRoad(tile.roadIndex, px, pz, margin(cls, tile))) return
-      ;(cls.hedge ? hedges : bushes).push({ x: px, z: pz, v: cls.hedge ? 1 + Math.floor(r1 * 2) : Math.floor(r1 * 4), r: (cls.hedge ? 0.5 : 0.6) + (cls.hedge ? 0.25 : 0.5) * r2,
-                    tall: cls.hedge ? 1.4 : 0.9, spin: r3 * Math.PI * 2, tint: cls.hedge ? 0.8 + 0.1 * r4 : 0.85 + 0.3 * r4, gorse: !!cls.gorse })
+      ;(cls.hedge ? hedges : bushes).push({ x: px, z: pz, v: cls.hedge ? 1 + Math.floor(r1 * 2) : Math.floor(r1 * 4), r: (cls.hedge ? 0.42 : 0.6) + (cls.hedge ? 0.16 : 0.5) * r2,
+                    tall: cls.hedge ? 1.7 : 0.9, spin: r3 * Math.PI * 2, tint: cls.hedge ? 0.78 + 0.1 * r4 : 0.85 + 0.3 * r4, gorse: !!cls.gorse })
     }
     if (cls.bush < 4) {                                   // a hedge is a metre wide: walk the raster instead of the tile
       for (let v = 0; v < ID_N; v++) for (let u = 0; u < ID_N; u++) {
