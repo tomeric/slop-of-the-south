@@ -45,6 +45,7 @@ export class Effects {
   debris(x, y, z, r, n) {
     for (let i = 0; i < n; i++) {
       const mesh = new THREE.Mesh(debrisGeo, debrisMat)
+      mesh.castShadow = mesh.receiveShadow = true
       mesh.position.set(x + (Math.random() - 0.5) * r, y, z + (Math.random() - 0.5) * r)
       mesh.scale.setScalar(0.6 + Math.random() * 1.2)
       const v = new THREE.Vector3((Math.random() - 0.5) * r * 1.5, 4 + Math.random() * r, (Math.random() - 0.5) * r * 1.5)

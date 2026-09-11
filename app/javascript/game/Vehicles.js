@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { TUNING as T } from "game/Tuning"
 import { softTexture } from "game/Effects"
+import { casts } from "game/Shadows"
 
 // The three vehicles, each with its own trick, plus the plain car everyone drove before. The numbers feed Vehicle.js
 // (physics), Combat.js (ram and side for collision damage, clear for rubble, push to grind through) and Camera.js
@@ -26,7 +27,7 @@ const AUTO = { id: "auto", naam: "Auto", length: 4.1, wheelbase: 2.6, track: 1.6
 export const vehicleSpec = (id) => VEHICLES.find((v) => v.id === id) ?? (id === "auto" ? AUTO : VEHICLES[0])
 
 export function makeVehicleMesh(id, color = 0xd7412b) {
-  return (BUILDERS[id] ?? makeCarMesh)(color)
+  return casts((BUILDERS[id] ?? makeCarMesh)(color))
 }
 
 // ---- shared parts ------------------------------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import { buildLamps, buildSignals } from "game/Furniture"
 import { buildSigns } from "game/Signs"
 import { paintCover, buildWater, coverRaster } from "game/Cover"
 import { noOutlineInstanced } from "game/Outline"
+import { casts, takes } from "game/Shadows"
 import { ROAD_LIFT } from "game/Roads"
 
 // Streams 500 m tiles in a square around the player and disposes the ones left behind. Tile JSON is fetched in the
@@ -120,28 +121,29 @@ export class ChunkManager {
       const terrain = new TerrainTile(data, this.cfg, data.cover?.length ? paintCover(data.cover, data.cover_sub ?? []) : null)
       const group = new THREE.Group()
       group.add(terrain.mesh)
+      takes(terrain.mesh)
       const water = buildWater(data.cover ?? [], (x, z) => terrain.heightAt(x, z), data.origin)
       if (water) group.add(water)
       const roads = buildRoads(data.roads, data.junctions, data.biome, (x, z) => terrain.heightAt(x, z))
-      if (roads) group.add(roads)
+      if (roads) group.add(takes(roads))
       const roadIndex = indexRoads(data.roads, data.junctions ?? [])
       // the surveyed road surfaces: they need the road index for the kerbs and for laying bricks along the street
       const surfaces = buildSurfaces(data.surfaces, data.origin, (x, z) => terrain.heightAt(x, z), {
         nearRoad: (x, z, m) => nearRoad(roadIndex, x, z, m),
         headingAt: (x, z) => roadHeading(roadIndex, x, z),
       })
-      if (surfaces) group.add(surfaces)
+      if (surfaces) group.add(takes(surfaces))
       const bridges = buildBridges(data.roads, (x, z) => terrain.heightAt(x, z))
-      if (bridges) group.add(bridges)
+      if (bridges) group.add(casts(bridges))
       const buildings = buildBuildings(data.buildings, reg)
-      if (buildings) group.add(buildings)
+      if (buildings) group.add(casts(buildings))
       const meshes = buildBuildingMeshes(data.meshes, reg)
-      if (meshes) group.add(meshes)
+      if (meshes) group.add(casts(meshes))
       const trees = buildTrees(data.trees, (x, z) => terrain.heightAt(x, z), reg)
-      if (trees) group.add(trees)
+      if (trees) group.add(casts(trees))
       if (data.furniture) {                                       // lamp posts, traffic lights, traffic signs
         const ground = (x, z) => roadHeight(roadIndex, x, z, terrain)
-        for (const part of [buildLamps(data.furniture.lamps, ground, reg), buildSignals(data.furniture.signals, ground, reg), buildSigns(data.furniture.signs, ground, reg)]) if (part) group.add(part)
+        for (const part of [buildLamps(data.furniture.lamps, ground, reg), buildSignals(data.furniture.signals, ground, reg), buildSigns(data.furniture.signs, ground, reg)]) if (part) group.add(takes(part))
       }
       noOutlineInstanced(group)                                   // trees, grass, lamps, signs, pads: outlines ignore instanceMatrix
       this.scene.add(group)

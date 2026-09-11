@@ -6,6 +6,7 @@ import { setSignsNight } from "game/Signs"
 import { setBuildingsNight } from "game/BuildingTextures"
 import { DayNight } from "game/DayNight"
 import { Environment } from "game/Environment"
+import { Shadows } from "game/Shadows"
 import { updateWater, updateGround } from "game/Cover"
 import { Scatter } from "game/Scatter"
 import { Vehicle } from "game/Vehicle"
@@ -46,6 +47,11 @@ async function main() {
   // vrij rijden
   const benchSpot = SPOTS[new URLSearchParams(location.search).get("bench")]
   const vrij = new URLSearchParams(location.search).has("vrij") || !!benchSpot
+  // ?schaduw turns the sun's shadow on, ?schaduw=0 off. It is a boot flag and not a live knob: castShadow and the
+  // map size recompile every program in the scene, so this is read once, here (game/Shadows.js).
+  const schaduw = new URLSearchParams(location.search).get("schaduw")
+  if (schaduw !== null) TUNING.light.shadow.on = schaduw !== "0"
+
   const container = document.getElementById("game")
   const playerId = container.dataset.playerId
   // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
@@ -79,6 +85,7 @@ async function main() {
   const remotes = new RemoteCars(world.scene, effects.smoke)
   const dayNight = new DayNight(world)
   const environment = new Environment(world)                // the ambient light, baked from the sky every couple of seconds
+  const shadows = new Shadows(world)                        // the sun's shadow box, hung on the camera (?schaduw)
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
   const music   = new Music(el("muziek"))
@@ -131,7 +138,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, shadows, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"
@@ -182,6 +189,7 @@ async function main() {
     chunks.update(car.x, car.z)
     updateSignals()
     const darkness = dayNight.update()
+    shadows.update(world.camera, dayNight.env.sunDir, darkness)
     environment.update(dayNight.env, world.hemi.groundColor, timer.getElapsed(), dt * 1000)
     car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness); setBuildingsNight(darkness)
     updateWater(dayNight.env, timer.getElapsed())

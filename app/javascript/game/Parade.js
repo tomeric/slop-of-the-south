@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { makeBeacon, placeBeacon, showBeacon } from "game/Beacon"
+import { casts } from "game/Shadows"
 
 // The vastelaovend parade: one praalwagen rolling in a straight line across the town. Its position is a pure
 // function of the server clock (Round.floatAt), so every client sees the same float without any messages. A red
@@ -11,7 +12,7 @@ ribbonMat.__shared = true
 export class Parade {
   constructor(scene) {
     this.scene = scene
-    this.mesh = makeFloatMesh()
+    this.mesh = casts(makeFloatMesh())
     this.beacon = makeBeacon(scene, 0xe0241a)
     this.ribbon = new THREE.Mesh(new THREE.BufferGeometry(), ribbonMat)
     this.ribbon.frustumCulled = false

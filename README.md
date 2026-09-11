@@ -151,6 +151,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Textures.js         the procedural kit: canvas textures tiled by the metre, plus speckle/grain/cracks/bricks
     game/Environment.js      the ambient light, PMREM-baked from the sky DayNight draws
     game/Outline.js          the cartoon outline pass, and who opts out of it
+    game/Shadows.js          the sun's shadow box, hung on the camera and snapped to whole texels (?schaduw)
     game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
     game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
     game/Bridges.js          decks with a fascia and a soffit, parapets, railings, abutments and piers
@@ -304,7 +305,7 @@ Open http://localhost:3000 in two browser windows and drive.
 Controls: W/↑ accelerate, S/↓ brake/reverse, A/D or ←/→ steer, Space handbrake, Shift boost, E trick, V vehicle
 picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan, scroll to zoom, F fits the whole
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
-the clock.
+the clock, `?schaduw` turns the sun's shadow on.
 
 **The grain of the ground** (`game/Cover.js`): the land cover paints two things per tile — the colour canvas, and a
 512² raster of the BGT class under every square metre. The terrain shader reads that raster (nearest, with half a
@@ -326,6 +327,19 @@ faces by hand where their material is made, and every instanced mesh (trees, gra
 built, because the addon offsets the hull with the model-view matrix alone and would place an instance's outline
 wrongly. In the densest village that costs +80 draw calls and +0.27 M triangles on 578 / 2.36 M. `slop.tuning.light.outline.on`
 turns it off live.
+
+**Shadows** (`?schaduw`, `game/Shadows.js`) are off by default and cost nothing while they are. Turned on, the sun
+casts through one orthographic box of ±140 m at 2048² — a 14 cm texel — hung 45 % of its own width ahead of the
+camera and snapped to whole texels, without which the map's grid slides under the world and every edge crawls at
+160 km/h. Buildings, trees, cars, bridges, the float and the rubble cast; the terrain, the road surfaces and the
+street furniture only receive; grass and reeds do not cast (their sway lives in a patched material the depth pass
+never sees, so their shadows would stand still while the grass bends), nor do the bushes (the dark vertex colour at
+their root is already contact shade) or the poles (thinner than a texel, so the shadow comes out dotted).
+`shadow.intensity` fades them out with the daylight rather than letting the moon cast at midnight, and it is the one
+live knob: `castShadow` and the map size are boot settings, since changing either recompiles every program in the
+scene. The densest village tile with 25 tiles loaded costs +59 draw calls and +0.49 M triangles (790 → 849,
+3.06 → 3.56 M) plus a 2048² depth pass and the PCF taps, which only a real GPU can price: run `?bench=dorp` against
+`?bench=dorp&schaduw` in Chrome before turning the default on in `Tuning.js`.
 
 **Bench** (`?bench=bos|dorp|veld`, `game/Bench.js`) parks the car at a fixed spot in free roam, waits for the tiles,
 watches two seconds of ordinary frames and then measures 300 renders, reading a pixel back each time so the GPU is

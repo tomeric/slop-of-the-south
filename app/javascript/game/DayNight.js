@@ -9,6 +9,7 @@ import { noOutline } from "game/Outline"
 export const DAY_SECONDS = 360
 export const SUNRISE = 4.5, SUNSET = 21.5
 const CLOUD_PERIOD = 256                                      // the cloud noise tiles over this, so the drift can wrap without a jump
+const SUN_DISTANCE = 600                                     // where the light sits when nothing is hanging it anywhere else
 const SKY_DISTANCE = 3200                                    // inside the camera's far plane, beyond the loaded tiles
 
 const DAY_SKY = new THREE.Color(0x9fb8cf), DUSK_SKY = new THREE.Color(0xe39a6c), NIGHT_SKY = new THREE.Color(0x0a0f1d)
@@ -95,10 +96,13 @@ export class DayNight {
     w.scene.fog.color.copy(u.horizon.value)                     // the ground fades into the horizon, not into a flat sky
     w.scene.fog.near = 600 - 300 * (1 - daylight); w.scene.fog.far = 2200 - 900 * (1 - daylight)
 
-    // the sun: east at sunrise, high in the south at noon, west at sunset; at night a faint moon from the other side
+    // The sun: east at sunrise, high in the south at noon, west at sunset; at night a faint moon from the other
+    // side. What this owns is the *direction* to it — where the light is placed is the shadow box's business
+    // (game/Shadows.js hangs it on the camera), and a directional light does not care about the distance.
     const up = Math.max(elev, 0.02)
-    if (elev > -0.05) w.sun.position.set(Math.cos(a) * 600, up * 600, Math.sin(a) * 300 + 80)
-    else w.sun.position.set(-Math.cos(a) * 400, 500, -Math.sin(a) * 200 + 150)
+    if (elev > -0.05) this.env.sunDir.set(Math.cos(a) * 600, up * 600, Math.sin(a) * 300 + 80).normalize()
+    else this.env.sunDir.set(-Math.cos(a) * 400, 500, -Math.sin(a) * 200 + 150).normalize()
+    w.sun.position.copy(this.env.sunDir).multiplyScalar(SUN_DISTANCE)
 
     // sun disc: along the sun's compass direction, reddening and fading as it touches the horizon. The chase camera
     // only sees ~20° above the horizon, so the disc rides a flattened arc (2° at the horizon, 18° at noon) instead
@@ -125,7 +129,6 @@ export class DayNight {
 
     this.darkness = 1 - daylight
     this.env.darkness = this.darkness
-    this.env.sunDir.copy(w.sun.position).normalize()
     this.env.sunColor.copy(w.sun.color).multiplyScalar(w.sun.intensity)
     this.env.zenith.copy(u.zenith.value); this.env.horizon.copy(u.horizon.value)
     return this.darkness

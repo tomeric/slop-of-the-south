@@ -73,7 +73,10 @@ export const TUNING = {
     hemi: 0.45, sun: 1.35,                    // the sky light and the sun, now that the environment map carries the ambient (live)
     env: { on: true, size: 64, sigma: 0.08, intensity: [0.3, 0.85], glare: 6,   // the baked sky (game/Environment.js)
            step: 0.02, minInterval: 0.25, maxInterval: 2, skipMs: 24 },         // re-bake this far apart, never on a slow frame
-    outline: { on: true, thickness: 0.003, color: [0.12, 0.08, 0.1], alpha: 0.85 },   // cartoon edges on buildings and cars (on: live)
+    outline: { on: true, thickness: 0.003, color: [0.12, 0.08, 0.1], alpha: 0.85 },   // cartoon edges on buildings and cars (on: true, thickness: reload)
+    // the sun's shadow (game/Shadows.js). `on` is a boot setting — ?schaduw turns it on, ?schaduw=0 off — because
+    // castShadow and the map size recompile every program in the scene; `strength` is live.
+    shadow: { on: false, size: 2048, half: 140, dist: 400, ahead: 0.45, strength: 1, bias: 0, normalBias: 0.25 },
   },
   buildings: {
     storey: 3.0, bay: 2.8,                    // a facade cell: one storey tall, one bay wide (reload: baked into the UVs)
