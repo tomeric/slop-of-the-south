@@ -22,5 +22,6 @@ export class Input {
   get ability()   { return this.consume("KeyE") }
   get pick()      { return this.consume("KeyV") }
   get digit()     { for (let i = 1; i <= 6; i++) if (this.consume(`Digit${i}`)) return i; return 0 }
+  get timeStep()  { return (this.consume("Period") ? 1 : 0) - (this.consume("Comma") ? 1 : 0) }   // , and . wind the clock (vrij rijden)
   consume(code)   { const had = this.pressed.has(code); this.pressed.delete(code); return had }
 }

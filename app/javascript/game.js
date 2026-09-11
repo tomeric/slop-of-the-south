@@ -37,6 +37,9 @@ async function main() {
     const [x, z, yaw = 0] = spawnParam.split(",").map(Number)
     if (Number.isFinite(x) && Number.isFinite(z)) { config.spawn = { x, z, yaw }; urlSpawn = true }
   }
+  // ?vrij = vrij rijden: geen ronde, geen server. Rijd waar je wilt, teleporteer met de kaart, sloop wat je wilt —
+  // handig om naar de wereld te kijken zonder dat een ronde je elk kwartier ergens anders neerzet.
+  const vrij = new URLSearchParams(location.search).has("vrij")
   const container = document.getElementById("game")
   const playerId = container.dataset.playerId
   // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
@@ -47,6 +50,17 @@ async function main() {
   const world   = new World(container)
   const effects = new Effects(world.scene)
   const index   = new Destructibles(effects)                // every object a player can flatten, in a grid
+  // vrij rijden has no server to judge a hit, so the rule from lib/game/round.rb runs here instead
+  const localHit = ({ hits }) => {
+    for (const { key, damage, max } of hits) {
+      const cur = index.state.get(key) ?? { hp: max, max, state: "intact" }
+      if (cur.state === "gone") continue
+      let hp = (cur.hp ?? max) - damage, state = cur.state
+      if (hp <= 0 && (key[0] === "m" || key[0] === "b") && state === "intact") { state = "rubble"; hp = Math.ceil(max * 0.5) }
+      else if (hp <= 0) { state = "gone"; hp = 0 }
+      index.apply(key, hp, max, state)
+    }
+  }
   const pickups = new Pickups()                             // boost pads, placed per tile from its roads
   const scatter = new Scatter(world.scene, effects, { heightAt: (x, z) => chunks.heightAt(x, z), tileIndex: (x, z) => chunks.tileIndex(x, z) })   // grass, bushes and reeds
   const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t) }, onDrop: (t) => { index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t) } })
@@ -55,7 +69,7 @@ async function main() {
   const input   = new Input()
   const car     = new Vehicle(config.spawn, vehicleSpec(localStorage.getItem("voertuig") ?? "trike"))
   let carFx     = new VehicleFx(car.mesh, effects.smoke)
-  const combat  = new Combat({ scene: world.scene, index, effects, heightAt: (x, z) => chunks.heightAt(x, z), car, send: (action, data) => net.send(action, data) })
+  const combat  = new Combat({ scene: world.scene, index, effects, heightAt: (x, z) => chunks.heightAt(x, z), car, send: (action, data) => { if (vrij) { if (action === "hit") localHit(data); return } net.send(action, data) } })
   const remotes = new RemoteCars(world.scene, effects.smoke)
   const dayNight = new DayNight(world)
   const parade  = new Parade(world.scene)
@@ -79,7 +93,7 @@ async function main() {
   const ladenEl = el("laden")
   // the picker: free at the first join and behind the loading screen; mid-round it goes through the server's action
   const picker = new Picker(el("kiezer"), {
-    onPick: (spec, free) => { if (free) applySpec(spec); else net.send("switch", { vehicle: spec.id }) },
+    onPick: (spec, free) => { if (free || vrij) applySpec(spec); else net.send("switch", { vehicle: spec.id }) },
     onName: rename,
   })
   const lobby = (open) => { ladenEl.classList.toggle("met-kiezer", open); if (open) picker.show(car.spec.id, true); else picker.hide() }
@@ -110,8 +124,11 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, music, loading, picker, voteScreen, preview, applySpec, tuning: TUNING }   // for poking at the scene from the console
-  const net = new Network({ room: "main", onMessage: (m) => {
+  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  const vrijLink = el("vrij-link")
+  vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
+  vrijLink.href = vrij ? location.pathname : "?vrij"
+  const net = new Network({ room: "main", offline: vrij, onMessage: (m) => {
     if (m.type === "move" || m.type === "join" || m.type === "leave") { if (m.id !== playerId) remotes.receive(m); return }
     if (m.type === "fire") { if (m.id !== playerId) combat.remoteFire(m, remotes.get(m.id)?.mesh); return }
     round.receive(m)
@@ -120,12 +137,14 @@ async function main() {
   const minimap = new Minimap(el("minimap"), config, {
     // a map click asks the server for a teleport; the car moves when the answer comes back
     onTeleport: (x, z) => {
+      if (vrij) { teleport(x, z); return }                                    // vrij rijden: geen server, geen wachttijd
       if (!round.running) { round.flash("Teleporteren kan alleen tijdens een ronde"); return false }
       if (!round.canAct()) { round.flash(`Actie beschikbaar over ${round.countdown()}`); return false }
       net.send("teleport", { x, z })
     }
   })
 
+  window.slop.minimap = minimap
   world.scene.add(car.mesh)
   const wall = config.border?.length ? new FlameWall(config.border) : null
   if (wall) world.scene.add(wall.mesh)
@@ -157,8 +176,9 @@ async function main() {
     scatter.update(dt, timer.getElapsed(), car)
     if (input.toggleMap) minimap.toggle()
     if (input.mute) round.flash(music.toggle() ? "Muziek uit" : "Muziek aan")
+    if (vrij) { const step = input.timeStep; if (step) dayNight.stepHours(step) }
     if (input.pick) {
-      if (!round.running) picker.show(car.spec.id, true)
+      if (vrij || !round.running) picker.show(car.spec.id, true)
       else if (round.canAct()) picker.show(car.spec.id, false)
       else round.flash(`Actie beschikbaar over ${round.countdown()}`)
     }
@@ -178,7 +198,7 @@ async function main() {
         placed = true
       }
       car.integrate(dt, input)
-      combat.enabled = round.running
+      combat.enabled = vrij || round.running
       combat.collide(car, dt)
       car.settle(heightAt)
       combat.abilities(car, input, dt)

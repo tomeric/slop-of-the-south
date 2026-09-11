@@ -292,6 +292,12 @@ picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
 the clock.
 
+**Vrij rijden** (`?vrij`, or the link in the vehicle picker) turns the round off: no server connection, so no
+loading screen, no vote, no teleport to another town every quarter of an hour and no world reset. A map click
+teleports straight away with no cooldown, any vehicle can be picked at any time, `,` and `.` wind the clock an hour,
+and damage is judged on your own machine with the rule from `Game::Round#hit`, so buildings still fall. It is how
+the world is looked at while working on how it looks.
+
 ### Driving
 
 - **Drift**: Space while steering above ~30 km/h kicks the rear out (`grip` drops to 0.22); steer into the slide to

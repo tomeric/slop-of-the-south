@@ -51,6 +51,9 @@ export class DayNight {
     return ((Date.now() / 1000) % DAY_SECONDS) / DAY_SECONDS * 24
   }
 
+  // wind the clock an hour on (vrij rijden): freezes it where it lands, like ?time= does
+  stepHours(d) { this.fixedHours = (((this.hours() + d) % 24) + 24) % 24 }
+
   clock() {
     const h = this.hours()
     return `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`
