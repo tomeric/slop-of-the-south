@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { groundMaterial } from "game/Cover"
 
 const plain = new THREE.MeshStandardMaterial({ color: 0x7fa15a, roughness: 1 })   // tiles without land cover
 plain.__shared = true
@@ -20,7 +21,7 @@ export class TerrainTile {
     geo.computeVertexNormals()
 
     // per-tile material when a land cover texture is painted (disposed with the tile), else the shared green
-    const material = texture ? new THREE.MeshStandardMaterial({ map: texture, roughness: 1 }) : plain
+    const material = texture ? groundMaterial(texture) : plain
     this.mesh = new THREE.Mesh(geo, material)
     this.mesh.position.set(this.ox + this.size / 2, 0, this.oz + this.size / 2)
   }

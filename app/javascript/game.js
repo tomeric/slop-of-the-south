@@ -4,7 +4,8 @@ import { ChunkManager } from "game/ChunkManager"
 import { updateSignals, setNightLevel } from "game/Furniture"
 import { setSignsNight } from "game/Signs"
 import { DayNight } from "game/DayNight"
-import { updateWater } from "game/Cover"
+import { updateWater, updateGround } from "game/Cover"
+import { Scatter } from "game/Scatter"
 import { Vehicle } from "game/Vehicle"
 import { Input } from "game/Input"
 import { Network } from "game/Network"
@@ -47,7 +48,8 @@ async function main() {
   const effects = new Effects(world.scene)
   const index   = new Destructibles(effects)                // every object a player can flatten, in a grid
   const pickups = new Pickups()                             // boost pads, placed per tile from its roads
-  const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t) }, onDrop: (t) => { index.dropTile(t); pickups.dropTile(t) } })
+  const scatter = new Scatter(world.scene, effects, { heightAt: (x, z) => chunks.heightAt(x, z), tileIndex: (x, z) => chunks.tileIndex(x, z) })   // grass, bushes and reeds
+  const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t) }, onDrop: (t) => { index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t) } })
   index.heightAt = (x, z) => chunks.heightAt(x, z)
   world.setHeightAt((x, z) => chunks.heightAt(x, z))
   const input   = new Input()
@@ -108,7 +110,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, music, loading, picker, voteScreen, preview, applySpec, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, music, loading, picker, voteScreen, preview, applySpec, tuning: TUNING }   // for poking at the scene from the console
   const net = new Network({ room: "main", onMessage: (m) => {
     if (m.type === "move" || m.type === "join" || m.type === "leave") { if (m.id !== playerId) remotes.receive(m); return }
     if (m.type === "fire") { if (m.id !== playerId) combat.remoteFire(m, remotes.get(m.id)?.mesh); return }
@@ -151,6 +153,8 @@ async function main() {
     const darkness = dayNight.update()
     car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness)
     updateWater(dayNight.env, timer.getElapsed())
+    updateGround()
+    scatter.update(dt, timer.getElapsed(), car)
     if (input.toggleMap) minimap.toggle()
     if (input.mute) round.flash(music.toggle() ? "Muziek uit" : "Muziek aan")
     if (input.pick) {
@@ -180,6 +184,7 @@ async function main() {
       combat.abilities(car, input, dt)
       carFx.update(car, dt)
       pickups.collect(car, tileIndex, onPickup)
+      scatter.flatten(car)
     }
     pickups.update(dt)
     combat.projectiles(dt)

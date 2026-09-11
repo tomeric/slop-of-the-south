@@ -164,6 +164,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Destructibles.js    every object a player can flatten: 25 m grid, hit tests, collapse/hide, rubble heaps
     game/Combat.js           ramming, rubble, the six tricks, projectiles, explosions and knockback, `hit` batches
     game/Effects.js          flashes, debris, dust, confetti, camera shake, sprite pools
+    game/Scatter.js          a carpet of grass tufts around the car plus bushes and reeds per tile; bushes squash under you
     game/Vehicles.js         the roster (specs + box-built meshes), game/Picker.js the six cards
     game/LoadingScreen.js    town photo, name and story between rounds; game/Music.js the YouTube player
 

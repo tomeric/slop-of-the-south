@@ -131,7 +131,7 @@ export class ChunkManager {
         for (const part of [buildLamps(data.furniture.lamps, ground, reg), buildSignals(data.furniture.signals, ground, reg), buildSigns(data.furniture.signs, ground, reg)]) if (part) group.add(part)
       }
       this.scene.add(group)
-      const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects }
+      const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [] }
       this.tiles.set(key, tile)
       this.hooks.onTile?.(tile)
     } catch (e) {
@@ -156,21 +156,22 @@ export class ChunkManager {
 // A uniform grid over the tile's road segments so a height query touches a handful of segments instead of all
 // ~800 in a town tile: the suspension asks five times per frame, the camera once more.
 const EDGE = 0.3                                          // blend band either side of the ribbon edge
+const REACH = 3                                           // metres beyond the edge that nearRoad may be asked about (sidewalks)
 const CELL = 25
 
 function indexRoads(roads, junctions) {
   const segs = []                                         // [ax, az, ay, bx, bz, by, hw]
-  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, pad = EDGE
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, pad = EDGE + REACH
   for (const road of roads ?? []) {
     const hw = road.width / 2, pts = road.pts
-    pad = Math.max(pad, hw + EDGE)
+    pad = Math.max(pad, hw + EDGE + REACH)
     for (let i = 1; i < pts.length; i++) {
       const [ax, az, ay] = pts[i - 1], [bx, bz, by] = pts[i]
       segs.push([ax, az, ay, bx, bz, by, hw])
       minX = Math.min(minX, ax, bx); maxX = Math.max(maxX, ax, bx); minZ = Math.min(minZ, az, bz); maxZ = Math.max(maxZ, az, bz)
     }
   }
-  for (const [jx, jz, , r] of junctions) { pad = Math.max(pad, r + EDGE); minX = Math.min(minX, jx); maxX = Math.max(maxX, jx); minZ = Math.min(minZ, jz); maxZ = Math.max(maxZ, jz) }
+  for (const [jx, jz, , r] of junctions) { pad = Math.max(pad, r + EDGE + REACH); minX = Math.min(minX, jx); maxX = Math.max(maxX, jx); minZ = Math.min(minZ, jz); maxZ = Math.max(maxZ, jz) }
   if (!segs.length && !junctions.length) return null
   const x0 = minX - pad, z0 = minZ - pad
   const nx = Math.ceil((maxX + pad - x0) / CELL) + 1, nz = Math.ceil((maxZ + pad - z0) / CELL) + 1
@@ -181,11 +182,29 @@ function indexRoads(roads, junctions) {
     for (let cz = cz0; cz <= cz1; cz++) for (let cx = cx0; cx <= cx1; cx++) (cells[cz * nx + cx] ??= []).push(item)
   }
   for (const s of segs) {
-    const r = s[6] + EDGE
+    const r = s[6] + EDGE + REACH
     put(Math.min(s[0], s[3]) - r, Math.min(s[1], s[4]) - r, Math.max(s[0], s[3]) + r, Math.max(s[1], s[4]) + r, s)
   }
-  for (const j of junctions) { const r = j[3] + EDGE; put(j[0] - r, j[1] - r, j[0] + r, j[1] + r, j) }   // junctions are 4-element arrays
+  for (const j of junctions) { const r = j[3] + EDGE + REACH; put(j[0] - r, j[1] - r, j[0] + r, j[1] + r, j) }   // junctions are 4-element arrays
   return { x0, z0, nx, nz, cells }
+}
+
+// whether (x, z) lies within `margin` metres of a road ribbon or junction patch (margin up to REACH)
+export function nearRoad(index, x, z, margin) {
+  if (!index) return false
+  const cx = Math.floor((x - index.x0) / CELL), cz = Math.floor((z - index.z0) / CELL)
+  if (cx < 0 || cz < 0 || cx >= index.nx || cz >= index.nz) return false
+  for (const s of index.cells[cz * index.nx + cx] ?? []) {
+    let out
+    if (s.length === 4) out = Math.hypot(s[0] - x, s[1] - z) - s[3]
+    else {
+      const dx = s[3] - s[0], dz = s[4] - s[1], len2 = dx * dx + dz * dz || 1
+      const t = Math.max(0, Math.min(1, ((x - s[0]) * dx + (z - s[1]) * dz) / len2))
+      out = Math.hypot(s[0] + dx * t - x, s[1] + dz * t - z) - s[6]
+    }
+    if (out <= margin) return true
+  }
+  return false
 }
 
 // Ground height at (x, z): on a road ribbon or junction patch it is the surface the client draws (the road level or the

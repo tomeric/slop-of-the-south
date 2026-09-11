@@ -113,6 +113,7 @@ export class SpritePool {
   constructor(scene, n, color) {
     this.items = []
     this.next = 0
+    this.color = color
     for (let i = 0; i < n; i++) {
       const mat = new THREE.SpriteMaterial({ map: dustTexture(), transparent: true, opacity: 0, depthWrite: false, color })
       const sprite = new THREE.Sprite(mat)
@@ -122,9 +123,10 @@ export class SpritePool {
     }
   }
 
-  emit(x, y, z, vx, vy, vz, life, s0, s1, a0) {
+  emit(x, y, z, vx, vy, vz, life, s0, s1, a0, color = this.color) {
     const e = this.items[this.next]; this.next = (this.next + 1) % this.items.length
     e.sprite.position.set(x, y, z); e.sprite.visible = true
+    e.mat.color.set(color)
     e.vx = vx; e.vy = vy; e.vz = vz; e.life = life; e.t = 0; e.s0 = s0; e.s1 = s1; e.a0 = a0
     e.sprite.scale.setScalar(s0); e.mat.opacity = a0
   }

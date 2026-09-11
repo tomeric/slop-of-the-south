@@ -68,6 +68,32 @@ export const TUNING = {
     radius: 2.2, respawn: 20, height: 0.5, size: 2.4,
   },
   fx: { smokeRate: 28, smokeLife: 0.7, smokeSlip: 0.18, smokePool: 64, flameFlicker: 0.4 },
+  ground: {
+    detail: { repeat: 125, strength: 0.45, fadeNear: 120, fadeFar: 300 },   // terrain grain: 125 repeats over 500 m = 4 m, fading out with distance (live)
+    paint: { minPx: 24, maxPolys: 160, budgetMs: 8 },                       // cover canvas detail: only polygons this big, this many, this long
+    sway: { amp: 0.18, speed: 1.7 },                                        // grass in the wind (live)
+    wake: { radius: 2.6, push: 0.55 },                                      // grass bends away from the car and springs back (live)
+    near: { cell: 10, radius: 6, perCell: 80, perFrame: 12, fadeStart: 46, fadeEnd: 58 },   // the grass carpet around the car: cells of this size, this many out, at most this many tufts each
+    bushCap: 700,                                                           // bushes per tile
+    roadMargin: 0.8, urbanMargin: 2.5,                                      // keep off the roads (and the sidewalks in built-up tiles)
+    reeds: { spacing: 4, offsetMin: 0.5, offsetMax: 1.5 },                  // along water edges, pushed onto the land
+    flatten: { pad: 0.9, squashY: 0.25, squashXZ: 1.3, puffs: 3, puffColor: 0x6f9a44 },
+    classes: {                                                              // by land-cover code: m² per grass tuft (dens) and per bush, and which tufts
+      1:  { dens: 2.2, mix: ["grass", "grass", "grass", "flower", "dry"] },  // grasland agrarisch
+      2:  { dens: 1.6, mix: ["grass", "grass", "dry", "flower"], bush: 2500 },
+      3:  { dens: 2.5, mix: ["grass", "grass", "flower"], bush: 600 },       // groenvoorziening
+      4:  { dens: 12, mix: ["dry"] },                                        // bouwland: stubble between the crop rows
+      5:  { dens: 2.5, mix: ["grass"] },
+      6:  { dens: 3, mix: ["grass"] },
+      7:  { dens: 3.5, mix: ["fern", "fern", "grass"], bush: 400 },          // bos
+      8:  { dens: 1.6, mix: ["heather", "heather", "dry"], bush: 800, gorse: true },
+      9:  { dens: 3, mix: ["grass"], bush: 25 },                             // struiken
+      10: { dens: 1.4, mix: ["reed", "reed", "grass"] },                     // moeras, rietland
+      11: { dens: 5, mix: ["dune"] },
+      20: { bush: 900 },                                                     // erf: bushes in the yards, no grass
+      24: { dens: 8, mix: ["dry"] },
+    },
+  },
 }
 
 // exponential approach: frame-rate independent first-order smoothing

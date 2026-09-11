@@ -1,7 +1,10 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { TUNING as T, mulberry32 } from "game/Tuning"
 
-// BGT land cover per tile: painted into a canvas texture that the terrain tile wears, plus water surfaces.
+// BGT land cover per tile: painted into a canvas texture that the terrain tile wears, plus water surfaces. Every
+// polygon gets its class colour and, when big enough, a detail pattern clipped to it (mottling, crop rows, forest
+// floor, heather, a wet band along the water); the terrain material multiplies a tiling grain over it up close.
 // Tile format: cover = [[code, outerRing, holeRing, ...], ...] with rings as flat decimetre offsets [dx, dz, ...]
 // from the tile's north-west corner (0..5000). Codes match LandCover::CODES on the server. Water entries carry their
 // surface level first: [30, level | null, outerRing, ...] — a level means a flat surface over a carved bed (lakes,
@@ -22,6 +25,9 @@ const COLORS = {
   30: ["#25393c"]                                                    // water bed (seen through the surface)
 }
 const WATER = 30
+// which detail patterns each class gets, laid over the flat fill
+const DETAIL = { 1: ["mottle"], 2: ["mottle"], 3: ["mottle"], 4: ["rows"], 5: ["mottle", "mown"], 6: ["mown"], 7: ["mottle", "floor"],
+                 8: ["mottle", "heath"], 9: ["mottle"], 10: ["marsh"], 11: ["sand"], 20: ["mottle"], 21: ["asphalt"], 22: ["grid"], 23: ["asphalt"], 24: ["mottle"] }
 
 export function paintCover(cover) {
   const canvas = document.createElement("canvas")
@@ -29,25 +35,137 @@ export function paintCover(cover) {
   const ctx = canvas.getContext("2d")
   ctx.fillStyle = BASE
   ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
-  const k = TEXTURE_SIZE / 5000
+  const k = TEXTURE_SIZE / 5000, P = T.ground.paint, pats = patternsFor(ctx), t0 = performance.now()
+  let detailed = 0
   for (const entry of cover) {
-    const palette = COLORS[entry[0]]
+    const code = entry[0], palette = COLORS[code]
     if (!palette) continue
     const start = waterLevel(entry) === undefined ? 1 : 2          // water: [code, level, rings…]
-    ctx.fillStyle = palette[hash(entry[start]) % palette.length]  // stable per polygon: fields keep their colour
+    const h = hash(entry[start])
+    ctx.fillStyle = palette[h % palette.length]                    // stable per polygon: fields keep their colour
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity
     ctx.beginPath()
     for (let r = start; r < entry.length; r++) {
       const ring = entry[r]
-      ctx.moveTo(ring[0] * k, ring[1] * k)
-      for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i] * k, ring[i + 1] * k)
+      for (let i = 0; i < ring.length; i += 2) {
+        const x = ring[i] * k, y = ring[i + 1] * k
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y)
+        if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y
+      }
       ctx.closePath()
     }
+    if (code === WATER) { ctx.lineWidth = 4; ctx.strokeStyle = "rgba(35,45,25,.45)"; ctx.stroke() }   // the fill covers the inner half: a wet band stays on the land
     ctx.fill("evenodd")
+    const names = DETAIL[code]
+    if (names && detailed < P.maxPolys && bx1 - bx0 >= P.minPx && by1 - by0 >= P.minPx && performance.now() - t0 < P.budgetMs) {
+      detailed++
+      ctx.save()
+      ctx.clip("evenodd")
+      ctx.translate((bx0 + bx1) / 2, (by0 + by1) / 2)
+      ctx.rotate(((h >>> 8) % 360) * Math.PI / 180)                // crop rows and streaks get a direction per field
+      const R = Math.hypot(bx1 - bx0, by1 - by0) / 2 + 2
+      for (const name of names) { ctx.fillStyle = pats[name]; ctx.fillRect(-R - (h % 128), -R - ((h >>> 7) % 128), 2 * R + 128, 2 * R + 128) }
+      ctx.restore()
+    }
+    if (code === WATER) { ctx.save(); ctx.clip("evenodd"); ctx.lineWidth = 3; ctx.strokeStyle = "rgba(120,140,110,.35)"; ctx.stroke(); ctx.restore() }   // shallows along the shore
   }
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 4
   return tex
+}
+
+// ---- detail patterns: 128 px tiles drawn so they wrap, turned into repeating patterns per canvas --------------------
+
+const PATTERN = 128
+let patternCanvases = null
+
+function patternsFor(ctx) {
+  patternCanvases ??= {
+    mottle:  tile((g, rnd, at) => { for (let i = 0; i < 60; i++) blob(g, rnd, at, 8 + rnd() * 16, i % 2 ? "rgba(255,255,255,.10)" : "rgba(0,0,0,.10)") }),
+    rows:    tile((g) => { g.fillStyle = "rgba(0,0,0,.14)"; for (let y = 0; y < PATTERN; y += 3) g.fillRect(0, y, PATTERN, 1.5) }),
+    mown:    tile((g) => { g.fillStyle = "rgba(0,0,0,.09)"; for (let y = 0; y < PATTERN; y += 6) g.fillRect(0, y, PATTERN, 2) }),
+    floor:   tile((g, rnd, at) => { dots(g, rnd, at, 500, 1, 2, "rgba(0,0,0,.25)"); dots(g, rnd, at, 150, 1, 2, "rgba(255,255,255,.12)") }),
+    heath:   tile((g, rnd, at) => { for (let i = 0; i < 12; i++) blob(g, rnd, at, 12 + rnd() * 18, "rgba(110,70,90,.35)") }),
+    marsh:   tile((g, rnd, at) => { g.lineWidth = 3; for (let i = 0; i < 60; i++) { g.strokeStyle = i % 2 ? "rgba(200,180,110,.25)" : "rgba(80,100,40,.25)"; const x = rnd() * PATTERN, y = rnd() * PATTERN, l = 20 + rnd() * 20; at(x, y, () => { g.beginPath(); g.moveTo(x, y); g.lineTo(x + l, y + (rnd() - 0.5) * 4); g.stroke() }) } }),
+    sand:    tile((g, rnd, at) => { dots(g, rnd, at, 900, 1, 1, "rgba(255,250,235,.12)"); dots(g, rnd, at, 400, 1, 1, "rgba(120,100,70,.10)") }),
+    grid:    tile((g) => { g.fillStyle = "rgba(0,0,0,.10)"; for (let i = 0; i < PATTERN; i += 4) { g.fillRect(0, i, PATTERN, 1); g.fillRect(i, 0, 1, PATTERN) } }),
+    asphalt: tile((g, rnd, at) => { dots(g, rnd, at, 300, 1, 2, "rgba(255,255,255,.06)"); dots(g, rnd, at, 300, 1, 2, "rgba(0,0,0,.06)") }),
+  }
+  return Object.fromEntries(Object.entries(patternCanvases).map(([name, c]) => [name, ctx.createPattern(c, "repeat")]))
+}
+
+// a transparent PATTERN² canvas; `at(x, y, draw)` repeats a drawing at the eight wrapped positions so the tile has no seam
+function tile(draw) {
+  const c = document.createElement("canvas")
+  c.width = c.height = PATTERN
+  const g = c.getContext("2d"), rnd = mulberry32(5)
+  const at = (x, y, fn) => { for (const dx of [-PATTERN, 0, PATTERN]) for (const dy of [-PATTERN, 0, PATTERN]) { g.save(); g.translate(dx, dy); fn(); g.restore() } }
+  draw(g, rnd, at)
+  return c
+}
+
+function blob(g, rnd, at, r, color) {
+  const x = rnd() * PATTERN, y = rnd() * PATTERN
+  at(x, y, () => { const grad = g.createRadialGradient(x, y, 0, x, y, r); grad.addColorStop(0, color); grad.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grad; g.fillRect(x - r, y - r, 2 * r, 2 * r) })
+}
+
+function dots(g, rnd, at, n, min, max, color) {
+  g.fillStyle = color
+  for (let i = 0; i < n; i++) { const x = rnd() * PATTERN, y = rnd() * PATTERN, s = min + rnd() * (max - min); at(x, y, () => g.fillRect(x, y, s, s)) }
+}
+
+// ---- the terrain material: the cover map with a tiling grain multiplied in up close -----------------------------------
+
+let detailTex = null
+function detailTexture() {                   // 256², mean grey, seamless: soft blobs and short blade-like strokes; a multiplier, so no colour space
+  if (detailTex) return detailTex
+  const c = document.createElement("canvas")
+  c.width = c.height = 256
+  const g = c.getContext("2d"), rnd = mulberry32(11)
+  const at = (fn) => { for (const dx of [-256, 0, 256]) for (const dy of [-256, 0, 256]) { g.save(); g.translate(dx, dy); fn(); g.restore() } }
+  g.fillStyle = "#808080"; g.fillRect(0, 0, 256, 256)
+  for (let i = 0; i < 300; i++) {
+    const x = rnd() * 256, y = rnd() * 256, r = 6 + rnd() * 14, light = rnd() > 0.5
+    at(() => { const grad = g.createRadialGradient(x, y, 0, x, y, r); grad.addColorStop(0, light ? "rgba(255,255,255,.16)" : "rgba(0,0,0,.16)"); grad.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grad; g.fillRect(x - r, y - r, 2 * r, 2 * r) })
+  }
+  g.lineWidth = 1.5
+  for (let i = 0; i < 900; i++) {
+    const x = rnd() * 256, y = rnd() * 256, a = rnd() * Math.PI, l = 4 + rnd() * 6
+    g.strokeStyle = rnd() > 0.5 ? "rgba(255,255,255,.22)" : "rgba(0,0,0,.22)"
+    at(() => { g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke() })
+  }
+  detailTex = new THREE.CanvasTexture(c)
+  detailTex.wrapS = detailTex.wrapT = THREE.RepeatWrapping
+  detailTex.anisotropy = 4
+  return detailTex
+}
+
+const groundU = { strength: { value: 0.35 }, repeat: { value: 125 }, fade: { value: new THREE.Vector2(120, 300) } }   // shared by every tile's material
+
+// one function for every tile material, so three compiles the program once
+function groundShader(shader) {
+  shader.uniforms.detailMap = { value: detailTexture() }
+  shader.uniforms.detailStrength = groundU.strength
+  shader.uniforms.detailRepeat = groundU.repeat
+  shader.uniforms.detailFade = groundU.fade
+  shader.fragmentShader = "uniform sampler2D detailMap; uniform float detailStrength, detailRepeat; uniform vec2 detailFade;\n" +
+    shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+      float dk = detailStrength * (1.0 - smoothstep(detailFade.x, detailFade.y, length(vViewPosition)));
+      diffuseColor.rgb *= mix(1.0, texture2D(detailMap, vMapUv * detailRepeat).r * 2.0, dk);`)
+}
+
+export function groundMaterial(texture) {
+  const m = new THREE.MeshStandardMaterial({ map: texture, roughness: 1 })
+  m.onBeforeCompile = groundShader
+  return m
+}
+
+// once per frame: the live knobs into the shared uniforms
+export function updateGround(G = T.ground.detail) {
+  groundU.strength.value = G.strength
+  groundU.repeat.value = G.repeat
+  groundU.fade.value.set(G.fadeNear, G.fadeFar)
 }
 
 const LIFT = 0.12, MAX_EDGE = 40
