@@ -2,22 +2,23 @@
 
 <div id="hud">
   <div id="signs">
-    <%# Straatnaambord: blue, white inner frame, uppercase; the wijk in small letters above the street %>
+    <%# One sign: the town or village big, the wijk and the street small beneath it %>
     <div id="sign" class="bord" hidden>
-      <div id="sign-district" class="bord-wijk"></div>
-      <div id="sign-street"></div>
+      <div id="sign-place"></div>
+      <div id="sign-street" class="bord-straat"></div>
     </div>
-    <%# Plaatsnaambord for the town or village %>
-    <div id="sign-place" class="bord bord-plaats" hidden></div>
     <%# biome of the current tile (stad, woonwijk, akkerland, weiland, boomgaarden, bos, water …) %>
     <div id="biome"></div>
     <%# game time: a full day every 6 minutes (DayNight.js) %>
     <div id="clock"></div>
     <div id="players"></div>
-    <%# the round: town, parade progress, obstacles left (Round.js) %>
-    <div id="ronde" class="bord bord-plaats" hidden></div>
     <%# the shared action: teleport or vehicle switch, one per minute %>
     <div id="actie" hidden></div>
+  </div>
+  <%# the route (Round.js): the float where it is on the way from start to end, an icon per stretch with obstacles still standing %>
+  <div id="route" hidden>
+    <div id="route-kop"></div>
+    <div class="route-balk"><div id="route-gedaan"></div><div id="route-iconen"></div><div id="route-optocht">🚜</div></div>
   </div>
   <%# round start / result banner in the middle of the screen %>
   <div id="banner" class="bord" hidden><div id="banner-titel"></div><div id="banner-sub" class="bord-wijk"></div></div>
@@ -72,11 +73,22 @@
           letter-spacing: .06em; text-align: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
   .bord::after { content: ""; position: absolute; inset: 4px; border: 2px solid #fff; border-radius: 3px; pointer-events: none; }
   #sign { min-width: 240px; font-size: 28px; line-height: 1.05; }
+  .bord-straat { font-size: 13px; font-weight: 500; letter-spacing: .14em; opacity: .95; margin-top: 5px; }
+  .bord-straat:empty { display: none; }
   .bord-wijk { font-size: 12px; font-weight: 500; letter-spacing: .16em; opacity: .95; margin-bottom: 4px; }
   .bord-wijk:empty { display: none; }
   .bord-plaats { font-size: 16px; padding: 7px 16px 8px; }
   #players, #biome, #clock, #actie { font-size: 14px; background: rgba(255, 255, 255, .6); padding: 3px 9px; border-radius: 4px; }
   #actie { font-variant-numeric: tabular-nums; }
+  #route { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: min(62vw, 760px); background: rgba(18, 22, 30, .78); color: #fff;
+           border-radius: 10px; padding: 8px 16px 12px; }
+  #route-kop { font-size: 12px; letter-spacing: .2em; text-transform: uppercase; opacity: .8; margin-bottom: 8px; text-align: center; }
+  .route-balk { position: relative; height: 28px; border-radius: 14px; background: rgba(255, 255, 255, .12); }
+  #route-gedaan { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 14px; background: linear-gradient(90deg, #e0241a, #f2c14e); opacity: .55; }
+  .route-icoon { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 17px; line-height: 1; }
+  .route-icoon.meer::after { content: attr(data-n); position: absolute; right: -9px; top: -7px; font: 700 9px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
+                             background: #fff; color: #111; border-radius: 6px; padding: 2px 3px; }
+  #route-optocht { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 28px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
   #banner { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); font-size: 40px; padding: 16px 44px 18px; white-space: nowrap; }
   #banner .bord-wijk { font-size: 15px; margin: 6px 0 0; }
   #flits { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); background: rgba(18, 22, 30, .85); color: #fff;
@@ -98,10 +110,10 @@
   #help { position: fixed; left: 28px; bottom: 24px; font-size: 13px; color: #1d2b1f; opacity: .65; }
   #burn { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(255, 120, 0, .25), rgba(180, 20, 0, .85)); opacity: 0; transition: opacity .5s; }
   #burn.on { opacity: 1; transition: opacity .05s; }
-  .minimap { position: fixed; left: 28px; bottom: 52px; width: 230px; height: 230px; border: 3px solid #fff; border-radius: 10px;
+  .minimap { position: fixed; left: 28px; bottom: 52px; width: 230px; height: 230px; border: 3px solid #fff; border-radius: 50%;
              box-shadow: 0 3px 10px rgba(0, 0, 0, .3); background: #e8e4d8; cursor: pointer; }
   .minimap.expanded { left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(92vw, 92vh); height: min(92vw, 92vh);
-                      cursor: crosshair; }
+                      border-radius: 14px; cursor: crosshair; }
   .minimap.expanded:active { cursor: grabbing; }
 
   #laden { position: fixed; inset: 0; z-index: 5; background: #0b0d12; color: #fff; overflow: hidden;

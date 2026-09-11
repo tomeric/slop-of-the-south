@@ -201,10 +201,12 @@ buildings, and `t/l/g/s:<dm x>,<dm z>` for trees, lamps, traffic lights and sign
 which both sides round to a decimetre. The tile builders register a handle per object (vertex range or instance
 index) and `Destructibles.js` keeps them in a grid for the car and the weapons.
 
-**Vehicles.** Brommer (fastest, sticky charge), trike (missiles), monstertruck (jump), tank (slugs), bulldozer
-(rams through, clears rubble in one pass) and sloopkraan (wrecking ball). E fires the trick; a shared action
-(teleport from the map or vehicle switch) has a minute of cooldown, reset at every new town; switching is free
-between rounds. Explosions shove nearby cars, nobody dies.
+**Vehicles.** Trike (fast, one rocket launcher, a missile every 2.5 s, barely dents anything itself), monstertruck
+(as fast, jumps and crushes on landing, and its flanks do two and a half times the ramming damage of its nose, so
+drift into the houses) and bulldozer (slow, grinds through anything in front of it, clears rubble in one pass, and E
+lifts or drops the blade for an extra slam on the building it touches). Ramming damage grows with the square of the
+speed into the wall. A shared action (teleport from the map or vehicle switch) has a minute of cooldown, reset at
+every new town; switching is free between rounds. Explosions shove nearby cars, nobody dies.
 
 **Protocol.** Server → client: `sync` (on subscribe), `round` (status changes), `object`, `end`, `teleport` and
 `switch` verdicts, plus the relayed `move` (with `vehicle`, `drift`, `boost`) and `fire`. Client → server: `move`,

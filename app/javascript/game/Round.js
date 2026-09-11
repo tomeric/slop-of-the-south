@@ -5,6 +5,9 @@ import * as THREE from "three"
 // round (every status change), object (hit points), teleport/switch (verdicts on actions), end. Hooks:
 // onRound(body, { fresh, started, live }), onEnd(msg), onAction(msg) for the player's own accepted actions,
 // onObjects(list) for the destructibles.
+const SLOTS = 60                                                              // stretches of route on the bar
+const ICON = { m: "🏠", b: "🏠", t: "🌳", l: "💡", g: "🚦", s: "🪧" }
+
 export class Round {
   constructor(playerId, els, hooks) {
     this.playerId = playerId
@@ -87,24 +90,46 @@ export class Round {
 
   // every 0.25 s from game.js
   hud() {
-    const { ronde, actie, banner } = this.els
+    const { actie, banner, route } = this.els
     const r = this.round
-    ronde.hidden = actie.hidden = !r
-    if (!r) { banner.hidden = true; return }
+    actie.hidden = !r
+    if (!r) { banner.hidden = route.hidden = true; return }
     const secs = (at) => Math.max(0, Math.ceil((at - this.now()) / 1000))
     const naam = r.arena.name
     if (r.status === "running") {
-      const n = this.remaining
-      ronde.textContent = `Ronde ${r.id} · ${naam} · optocht ${Math.round(this.progress() * 100)}% · ${n} ${n === 1 ? "obstakel" : "obstakels"} op de route`
       banner.hidden = true
+      this.routeBar()
     } else if (r.status === "intermission") {
-      ronde.textContent = `Ronde ${r.id} · ${naam}`
+      route.hidden = true
       this.showBanner(naam, `Optocht start over ${secs(r.next_at)} s`)
     } else {
-      ronde.textContent = `Ronde ${r.id} · ${naam} · afgelopen`
+      route.hidden = true
       this.showBanner(r.result === "won" ? "Alaaf! Optocht binnen" : "Optocht vastgelopen", `Volgende plaats over ${secs(r.next_at)} s`)
     }
     actie.textContent = this.canAct() ? "Actie: klaar" : `Actie over ${this.countdown()}`
+  }
+
+  // the route as a bar: the float where it is, and an icon per stretch of route for the obstacles still standing
+  // there (the commonest kind, with a count when there are more), the cleared part tinted behind the float
+  routeBar() {
+    const { route, routeKop, routeGedaan, routeIconen, routeOptocht } = this.els
+    const r = this.round, len = r.path.length, p = this.progress()
+    route.hidden = false
+    routeKop.textContent = `Ronde ${r.id} · ${r.arena.name}`
+    routeGedaan.style.width = routeOptocht.style.left = `${(p * 100).toFixed(1)}%`
+    const buckets = new Map()
+    for (const o of this.obstacles.values()) {
+      if (o.state === "gone") continue
+      const i = THREE.MathUtils.clamp(Math.floor(o.at / len * SLOTS), 0, SLOTS - 1)
+      const b = buckets.get(i) ?? { n: 0, kinds: {} }
+      b.n++; b.kinds[o.kind] = (b.kinds[o.kind] ?? 0) + 1
+      buckets.set(i, b)
+    }
+    const html = [...buckets].sort((a, b) => a[0] - b[0]).map(([i, b]) => {
+      const kind = Object.entries(b.kinds).sort((a, c) => c[1] - a[1])[0][0]
+      return `<span class="route-icoon${b.n > 1 ? " meer" : ""}" style="left:${((i + 0.5) / SLOTS * 100).toFixed(1)}%" data-n="${b.n}">${ICON[kind] ?? ICON.m}</span>`
+    }).join("")
+    if (html !== this.routeHtml) { this.routeHtml = html; routeIconen.innerHTML = html }
   }
 
   showBanner(title, sub) {

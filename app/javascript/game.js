@@ -76,7 +76,8 @@ async function main() {
 
   // the round: a new town restores the world and drops everyone on its spawn road behind the loading screen (a page
   // load mid-round too, unless the URL asked for a spot)
-  const round = new Round(playerId, { ronde: el("ronde"), actie: el("actie"), banner: el("banner"), bannerTitel: el("banner-titel"), bannerSub: el("banner-sub"), flits: el("flits") }, {
+  const round = new Round(playerId, { actie: el("actie"), banner: el("banner"), bannerTitel: el("banner-titel"), bannerSub: el("banner-sub"), flits: el("flits"),
+                                       route: el("route"), routeKop: el("route-kop"), routeGedaan: el("route-gedaan"), routeIconen: el("route-iconen"), routeOptocht: el("route-optocht") }, {
     onRound: (body, { fresh, live }) => {
       if (fresh) {
         chunks.reload(); index.resetRound(); combat.reset()
@@ -128,7 +129,7 @@ async function main() {
     effects.flash(p.x, p.y + 0.6, p.z, 1.6); effects.shake(0.04)
     boostEl.classList.add("pop"); setTimeout(() => boostEl.classList.remove("pop"), 200)
   }
-  const signEl = el("sign"), streetEl = el("sign-street"), districtEl = el("sign-district"), placeEl = el("sign-place"), biomeEl = el("biome")
+  const signEl = el("sign"), streetEl = el("sign-street"), placeEl = el("sign-place"), biomeEl = el("biome")
   const timer = new THREE.Timer()
   let netTimer = 0, signTimer = 0, borderTimer = 0
   const heightAt = (x, z) => chunks.heightAt(x, z), tileIndex = (x, z) => chunks.tileIndex(x, z)
@@ -202,11 +203,9 @@ async function main() {
     if (signTimer > 0.25) {
       signTimer = 0
       locator.update(car.x, car.z, chunks.roadsAround(car.x, car.z))
-      streetEl.textContent = locator.street ?? ""
-      districtEl.textContent = locator.district ?? ""
-      signEl.hidden = !locator.street
       placeEl.textContent = locator.place ?? ""
-      placeEl.hidden = !locator.place
+      streetEl.textContent = [locator.district, locator.street].filter(Boolean).join(" · ")
+      signEl.hidden = !(locator.place || locator.street)
       biomeEl.textContent = chunks.biomeAt(car.x, car.z) ?? ""
       clockEl.textContent = dayNight.clock()
       round.hud()
