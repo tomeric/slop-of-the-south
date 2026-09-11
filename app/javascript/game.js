@@ -73,6 +73,7 @@ async function main() {
     placed = false
   }
   voertuigEl.textContent = car.spec.naam; hintEl.textContent = car.spec.ability.hint
+  const rename = (name) => { localStorage.setItem("driverName", name); net.send("rename", { name }); round.flash(`Je heet nu ${name}`) }
   const ladenEl = el("laden")
   // the picker: free at the first join and behind the loading screen; mid-round it goes through the server's action
   const picker = new Picker(el("kiezer"), {
@@ -83,7 +84,6 @@ async function main() {
 
   // the round: a new town restores the world and drops everyone on its spawn road behind the loading screen (a page
   // load mid-round too, unless the URL asked for a spot)
-  const rename = (name) => { localStorage.setItem("driverName", name); net.send("rename", { name }); round.flash(`Je heet nu ${name}`) }
   const voteScreen = new VoteScreen(el("stemmen"), { onVote: (name) => net.send("vote", { name }), onName: rename })
   const preview = new Minimap(el("laden-kaart"), config, { onTeleport: () => false, interactive: false })   // the arena on the loading screen
   const ladenRoute = el("laden-route")
