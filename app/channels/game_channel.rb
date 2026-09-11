@@ -3,7 +3,7 @@
 # picks the next town between rounds. The
 # room's Game::RoundManager owns the round; a new subscriber gets the whole state in a `sync`.
 class GameChannel < ApplicationCable::Channel
-  RATES = { "move" => 15, "hit" => 20, "fire" => 10, "teleport" => 2, "switch" => 2, "vote" => 2 }.freeze   # messages per second
+  RATES = { "move" => 15, "hit" => 20, "fire" => 10, "teleport" => 2, "switch" => 2, "vote" => 2, "rename" => 2 }.freeze   # messages per second
   MAX_HITS = 32
 
   def subscribed
@@ -67,6 +67,13 @@ class GameChannel < ApplicationCable::Channel
   def vote(data)
     return unless allowed?("vote")
     answer manager.cast(player_id, data["name"].to_s.strip.first(40))
+  end
+
+  # data: { name }: the next move messages carry it, so everyone's beacon follows
+  def rename(data)
+    return unless allowed?("rename")
+    @name = data["name"].to_s.strip.first(16).presence || @name
+    manager.rename(player_id, @name)
   end
 
   private

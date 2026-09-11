@@ -23,6 +23,13 @@ class GameChannelTest < ActionCable::Channel::TestCase
     assert_equal [ "move", "tank", "p1", 1.0 ], move.values_at("type", "vehicle", "id", "x")
   end
 
+  test "a rename travels with the next move" do
+    perform :rename, name: "  Sjeng  "
+    perform :move, x: 0, y: 0, z: 0, yaw: 0, speed: 0, brake: false, vehicle: "trike"
+    assert_equal "Sjeng", ActiveSupport::JSON.decode(broadcasts("game:test").last)["name"]
+    assert_equal "Sjeng", @manager.players["p1"].name
+  end
+
   test "applies valid hits and drops malformed ones" do
     @manager.tick(T)
     @manager.tick(T + Game::RoundManager::VOTE_MS)

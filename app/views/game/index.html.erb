@@ -66,7 +66,7 @@
 </div>
 <%# the vehicle picker (Picker.js): three cards, over the loading screen between towns or on V during a round %>
 <div id="kiezer" hidden>
-  <div class="kiezer-kop">Kies je voertuig</div>
+  <div class="kiezer-kop"><span>Kies je voertuig</span><label class="naam">Jouw naam <input type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Chauffeur"></label></div>
   <div class="kaarten"></div>
   <div class="kiezer-hint"></div>
 </div>
@@ -155,7 +155,11 @@
   #cooldown-bar { display: block; height: 100%; width: 100%; background: #0f3f8f; transform-origin: left; }
   #kiezer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; padding: 14px 8vw 16px; color: #fff;
             background: linear-gradient(to top, rgba(8, 10, 16, .94), rgba(8, 10, 16, .7)); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
-  .kiezer-kop { font-size: 13px; letter-spacing: .3em; text-transform: uppercase; opacity: .8; margin-bottom: 10px; }
+  .kiezer-kop { display: flex; justify-content: space-between; align-items: center; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; opacity: .9; margin-bottom: 10px; }
+  .kiezer-kop .naam { display: flex; align-items: center; gap: 10px; }
+  .kiezer-kop input { width: 180px; padding: 6px 10px; font: 14px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0; text-transform: none; color: #fff;
+                      background: rgba(255, 255, 255, .1); border: 2px solid rgba(255, 255, 255, .2); border-radius: 8px; outline: none; }
+  .kiezer-kop input:focus { border-color: #f2c14e; }
   .kaarten { display: flex; gap: 10px; }
   .kaart { flex: 1; position: relative; background: rgba(255, 255, 255, .08); border: 2px solid rgba(255, 255, 255, .12); border-radius: 10px;
            padding: 12px 14px 12px; cursor: pointer; transition: background .15s, border-color .15s; }

@@ -59,6 +59,10 @@ module Game
       @mutex.synchronize { (p = @players[player_id]) && (p.tabs -= 1) <= 0 && @players.delete(player_id) }
     end
 
+    def rename(player_id, name)
+      @mutex.synchronize { (p = @players[player_id]) && p.name = name }
+    end
+
     def moved(player_id, x, z, vehicle)
       @mutex.synchronize do
         p = @players[player_id] or return

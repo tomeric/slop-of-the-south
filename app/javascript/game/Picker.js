@@ -1,14 +1,21 @@
 import { VEHICLES } from "game/Vehicles"
 
-// The vehicle picker: six cards with a speed bar and the trick. Free while no round runs (at the first join and
-// behind the loading screen between towns); during a round picking costs the shared action. Click or 1–6 picks,
-// Enter keeps what you have, Escape closes.
+// The vehicle picker: three cards with a speed bar and the trick, and the field to change your name. Free while no
+// round runs (at the first join and behind the loading screen between towns); during a round picking costs the
+// shared action. Click or 1–3 picks, Enter keeps what you have, Escape closes. Keys typed into the name field stay
+// there: they neither drive nor pick.
 export class Picker {
-  constructor(el, { onPick }) {
+  constructor(el, { onPick, onName }) {
     this.el = el
     this.onPick = onPick
     this.kaarten = el.querySelector(".kaarten")
     this.hint = el.querySelector(".kiezer-hint")
+    this.naam = el.querySelector("input")
+    this.naam.value = localStorage.getItem("driverName") ?? ""
+    const commit = () => { const name = this.naam.value.trim().slice(0, 16); if (name && name !== localStorage.getItem("driverName")) onName(name) }
+    this.naam.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.code === "Enter" || e.code === "Escape") this.naam.blur() })
+    this.naam.addEventListener("keyup", (e) => e.stopPropagation())
+    this.naam.addEventListener("blur", commit)
     this.free = true
     this.current = null
     this.kaarten.innerHTML = VEHICLES.map((v, i) => {
@@ -28,7 +35,7 @@ export class Picker {
     this.el.hidden = false
   }
 
-  hide() { this.el.hidden = true }
+  hide() { if (this.open) this.naam.blur(); this.el.hidden = true }
 
   mark(id) {
     this.current = id

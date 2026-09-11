@@ -38,6 +38,9 @@ async function main() {
   }
   const container = document.getElementById("game")
   const playerId = container.dataset.playerId
+  // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
+  const nameParam = new URLSearchParams(location.search).get("name")
+  if (nameParam) localStorage.setItem("driverName", nameParam.trim().slice(0, 16))
   const el = (id) => document.getElementById(id)
 
   const world   = new World(container)
@@ -72,7 +75,10 @@ async function main() {
   voertuigEl.textContent = car.spec.naam; hintEl.textContent = car.spec.ability.hint
   const ladenEl = el("laden")
   // the picker: free at the first join and behind the loading screen; mid-round it goes through the server's action
-  const picker = new Picker(el("kiezer"), { onPick: (spec, free) => { if (free) applySpec(spec); else net.send("switch", { vehicle: spec.id }) } })
+  const picker = new Picker(el("kiezer"), {
+    onPick: (spec, free) => { if (free) applySpec(spec); else net.send("switch", { vehicle: spec.id }) },
+    onName: (name) => { localStorage.setItem("driverName", name); net.send("rename", { name }); round.flash(`Je heet nu ${name}`) },
+  })
   const lobby = (open) => { ladenEl.classList.toggle("met-kiezer", open); if (open) picker.show(car.spec.id, true); else picker.hide() }
 
   // the round: a new town restores the world and drops everyone on its spawn road behind the loading screen (a page
@@ -102,9 +108,6 @@ async function main() {
   })
   picker.show(car.spec.id, true)
   window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, music, loading, picker, voteScreen, preview, applySpec, tuning: TUNING }   // for poking at the scene from the console
-  // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
-  const nameParam = new URLSearchParams(location.search).get("name")
-  if (nameParam) localStorage.setItem("driverName", nameParam.trim().slice(0, 16))
   const net = new Network({ room: "main", onMessage: (m) => {
     if (m.type === "move" || m.type === "join" || m.type === "leave") { if (m.id !== playerId) remotes.receive(m); return }
     if (m.type === "fire") { if (m.id !== playerId) combat.remoteFire(m, remotes.get(m.id)?.mesh); return }
