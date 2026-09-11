@@ -22,7 +22,7 @@ const BUILDING = "#b7a597", TREE = "#5f8c3e", WATER_EDGE = "#7fa9cc"
 const BBOX = new WeakMap()       // flat coordinate array → [minX, minZ, maxX, maxZ]
 
 export class Minimap {
-  constructor(canvas, config, { onTeleport }) {
+  constructor(canvas, config, { onTeleport, interactive = true }) {
     this.canvas = canvas
     this.ctx = canvas.getContext("2d")
     this.cfg = config
@@ -44,6 +44,13 @@ export class Minimap {
     fetch("/map/overview.json").then((r) => (r.ok ? r : fetch("/api/map/overview"))).then((r) => r.json())
       .then((o) => { this.overview = o; this.dirty = this.layerDirty = true; if (this.expanded) this.fit() }).catch(console.warn)
 
+    if (interactive) this.listen()
+    addEventListener("resize", () => this.resize())
+    this.resize()
+  }
+
+  listen() {
+    const { canvas } = this
     canvas.addEventListener("mousedown", (e) => { this.drag = { x: e.offsetX, y: e.offsetY, moved: false }; e.preventDefault() })
     canvas.addEventListener("mousemove", (e) => {
       this.hover = this.expanded ? [e.offsetX, e.offsetY] : null
@@ -79,8 +86,18 @@ export class Minimap {
       if (e.code === "KeyF") this.fit()
       if (e.code === "Escape") this.toggle()
     })
-    addEventListener("resize", () => this.resize())
-    this.resize()
+  }
+
+  // a fixed frame of the arena for the loading screen: the whole square with the route through it, no car
+  showArena(round) {
+    const a = round.round?.arena
+    if (!a) return
+    this.round = round
+    if (this.w <= 1) this.resize()
+    const scale = 2 * a.half * 1.2 / Math.min(this.w, this.h)
+    if (this.view.cx !== a.cx || this.view.cz !== a.cz || this.view.scale !== scale) { this.view = { cx: a.cx, cz: a.cz, scale }; this.dirty = true }
+    if (this.view.scale < DETAIL_SCALE) this.loadCells()
+    if (this.dirty) { this.dirty = false; this.draw() }
   }
 
   toggle() {

@@ -1,10 +1,10 @@
 import * as THREE from "three"
 
-// The round as the server tells it: the town, the parade route, the obstacles and their state, the server clock
-// offset and the shared action cooldown, plus every Dutch string on the HUD. Messages handled: sync (on subscribe),
-// round (every status change), object (hit points), teleport/switch (verdicts on actions), end. Hooks:
-// onRound(body, { fresh, started, live }), onEnd(msg), onAction(msg) for the player's own accepted actions,
-// onObjects(list) for the destructibles.
+// The round as the server tells it: the town, the parade route, the obstacles and their state, the vote on the
+// next town, the server clock offset and the shared action cooldown, plus every Dutch string on the HUD. Messages
+// handled: sync (on subscribe), round (every status change), object (hit points), vote (the tally), teleport/switch
+// (verdicts on actions), end. Hooks: onRound(body, { fresh, started, live }), onEnd(msg), onAction(msg) for the
+// player's own accepted actions, onObjects(list) for the destructibles, onVote(vote or null).
 const SLOTS = 60                                                              // stretches of route on the bar
 const ICON = { m: "🏠", b: "🏠", t: "🌳", l: "💡", g: "🚦", s: "🪧" }
 
@@ -16,6 +16,7 @@ export class Round {
     this.offset = 0                 // server clock minus Date.now()
     this.round = null               // the round body from the server, or null while idle
     this.obstacles = new Map()      // key → obstacle, states kept current from `object` messages
+    this.vote = null                // the vote between rounds: { candidates, by, ends_at }, or null
     this.nextActionAt = null        // server ms; null = the action is ready
     this.flashTimer = null
   }
@@ -27,8 +28,12 @@ export class Round {
   receive(msg) {
     if (msg.now) this.offset = msg.now - Date.now()
     switch (msg.type) {
-      case "sync":   this.nextActionAt = msg.you.next_action_at; this.setRound(msg.round, false); break
-      case "round":  this.setRound(msg.round, true); break
+      case "sync":   this.nextActionAt = msg.you.next_action_at; this.setRound(msg.round, false); this.setVote(msg.vote ?? null); break
+      case "round":  this.setVote(null); this.setRound(msg.round, true); break
+      case "vote":
+        if (msg.ok === false) this.flash(msg.reason === "unknown" ? "Die plaats ken ik niet" : "De stemming is gesloten")
+        else this.setVote(msg.vote)
+        break
       case "object": this.applyObjects(msg.list); break
       case "end":    this.hooks.onEnd?.(msg); break
       case "teleport":
@@ -49,6 +54,12 @@ export class Round {
       this.hooks.onRound?.(body, { fresh, started, live })
     }
     this.hud()
+  }
+
+  setVote(vote) {
+    if (!vote && !this.vote) return
+    this.vote = vote
+    this.hooks.onVote?.(vote)
   }
 
   applyObjects(list) {
@@ -98,6 +109,7 @@ export class Round {
     const naam = r.arena.name
     if (r.status === "running") {
       banner.hidden = true
+      route.hidden = false
       this.routeBar()
     } else if (r.status === "intermission") {
       route.hidden = true
@@ -109,15 +121,14 @@ export class Round {
     actie.textContent = this.canAct() ? "Actie: klaar" : `Actie over ${this.countdown()}`
   }
 
-  // the route as a vertical bar up the right of the screen, start at the bottom: the float where it is, an icon per
-  // stretch of route for the obstacles still standing there (the commonest kind, with a count when there are more),
-  // the cleared part tinted behind the float
-  routeBar() {
-    const { route, routeKop, routeGedaan, routeIconen, routeOptocht } = this.els
+  // the route as a vertical bar, start at the bottom: the float where it is, an icon per stretch of route for the
+  // obstacles still standing there (the commonest kind, with a count when there are more), the cleared part tinted
+  // behind the float. Rendered into the HUD's bar during the round and into the loading screen's before it.
+  routeBar(container = this.els.route) {
     const r = this.round, len = r.path.length, p = this.progress()
-    route.hidden = false
-    routeKop.textContent = `Ronde ${r.id} · ${r.arena.name}`
-    routeGedaan.style.height = routeOptocht.style.bottom = `${(p * 100).toFixed(1)}%`
+    const q = (cls) => container.querySelector(cls)
+    q(".route-kop").textContent = `Ronde ${r.id} · ${r.arena.name}`
+    q(".route-gedaan").style.height = q(".route-optocht").style.bottom = `${(p * 100).toFixed(1)}%`
     const buckets = new Map()
     for (const o of this.obstacles.values()) {
       if (o.state === "gone") continue
@@ -130,7 +141,7 @@ export class Round {
       const kind = Object.entries(b.kinds).sort((a, c) => c[1] - a[1])[0][0]
       return `<span class="route-icoon${b.n > 1 ? " meer" : ""}" style="bottom:${((i + 0.5) / SLOTS * 100).toFixed(1)}%" data-n="${b.n}">${ICON[kind] ?? ICON.m}</span>`
     }).join("")
-    if (html !== this.routeHtml) { this.routeHtml = html; routeIconen.innerHTML = html }
+    if (html !== container.routeHtml) { container.routeHtml = html; q(".route-iconen").innerHTML = html }
   }
 
   showBanner(title, sub) {

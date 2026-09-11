@@ -1,8 +1,9 @@
 # One room = one stream. Clients send `move` ~10x/second, which the server relays, plus the round-mode actions:
-# `hit` reports damage, `fire` shows a shot to the others, `teleport` and `switch` spend the shared action. The
+# `hit` reports damage, `fire` shows a shot to the others, `teleport` and `switch` spend the shared action, `vote`
+# picks the next town between rounds. The
 # room's Game::RoundManager owns the round; a new subscriber gets the whole state in a `sync`.
 class GameChannel < ApplicationCable::Channel
-  RATES = { "move" => 15, "hit" => 20, "fire" => 10, "teleport" => 2, "switch" => 2 }.freeze   # messages per second
+  RATES = { "move" => 15, "hit" => 20, "fire" => 10, "teleport" => 2, "switch" => 2, "vote" => 2 }.freeze   # messages per second
   MAX_HITS = 32
 
   def subscribed
@@ -60,6 +61,12 @@ class GameChannel < ApplicationCable::Channel
   def switch(data)
     return unless allowed?("switch")
     answer manager.switch(player_id, data["vehicle"].to_s.first(16))
+  end
+
+  # data: { name }: a candidate town or a typed one
+  def vote(data)
+    return unless allowed?("vote")
+    answer manager.cast(player_id, data["name"].to_s.strip.first(40))
   end
 
   private

@@ -18,6 +18,7 @@ import { LoadingScreen } from "game/LoadingScreen"
 import { Music } from "game/Music"
 import { vehicleSpec } from "game/Vehicles"
 import { Picker } from "game/Picker"
+import { VoteScreen } from "game/VoteScreen"
 import { Destructibles } from "game/Destructibles"
 import { Combat } from "game/Combat"
 import { Effects } from "game/Effects"
@@ -76,20 +77,23 @@ async function main() {
 
   // the round: a new town restores the world and drops everyone on its spawn road behind the loading screen (a page
   // load mid-round too, unless the URL asked for a spot)
-  const round = new Round(playerId, { actie: el("actie"), banner: el("banner"), bannerTitel: el("banner-titel"), bannerSub: el("banner-sub"), flits: el("flits"),
-                                       route: el("route"), routeKop: el("route-kop"), routeGedaan: el("route-gedaan"), routeIconen: el("route-iconen"), routeOptocht: el("route-optocht") }, {
+  const voteScreen = new VoteScreen(el("stemmen"), { onVote: (name) => net.send("vote", { name }) })
+  const preview = new Minimap(el("laden-kaart"), config, { onTeleport: () => false, interactive: false })   // the arena on the loading screen
+  const ladenRoute = el("laden-route")
+  const round = new Round(playerId, { actie: el("actie"), banner: el("banner"), bannerTitel: el("banner-titel"), bannerSub: el("banner-sub"), flits: el("flits"), route: el("route") }, {
     onRound: (body, { fresh, live }) => {
       if (fresh) {
         chunks.reload(); index.resetRound(); combat.reset()
         config.spawn = body.spawn
         if (live || !urlSpawn) teleport(body.spawn.x, body.spawn.z, body.spawn.yaw)
-        if (body.status !== "ended") { loading.show(body.arena, body.id); lobby(true) }
+        if (body.status !== "ended") { loading.show(body.arena, body.id); lobby(true); voteScreen.hide() }
       }
       index.applyAll(body.obstacles.concat(body.objects))
       parade.setRound(round)
       if (body.status === "ended") { loading.hide(); lobby(false) }
     },
     onObjects: (list) => index.applyAll(list),
+    onVote: (vote) => { if (vote) voteScreen.show(vote, playerId, round.round); else voteScreen.hide() },
     onEnd: (msg) => { parade.hide(); combat.enabled = false; effects.confetti(msg.x, chunks.heightAt(msg.x, msg.z) + 4, msg.z) },
     onAction: (msg) => {
       if (msg.type === "teleport") teleport(msg.x, msg.z)
@@ -97,7 +101,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, music, loading, picker, applySpec, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, music, loading, picker, voteScreen, preview, applySpec, tuning: TUNING }   // for poking at the scene from the console
   // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
   const nameParam = new URLSearchParams(location.search).get("name")
   if (nameParam) localStorage.setItem("driverName", nameParam.trim().slice(0, 16))
@@ -209,7 +213,12 @@ async function main() {
       biomeEl.textContent = chunks.biomeAt(car.x, car.z) ?? ""
       clockEl.textContent = dayNight.clock()
       round.hud()
-      if (loading.open) loading.progress(chunks.readyFraction(car.x, car.z), round.running ? null : Math.max(0, Math.ceil(((round.round?.next_at ?? 0) - round.now()) / 1000)))
+      if (loading.open) {
+        loading.progress(chunks.readyFraction(car.x, car.z), round.running ? null : Math.max(0, Math.ceil(((round.round?.next_at ?? 0) - round.now()) / 1000)))
+        preview.showArena(round)
+        round.routeBar(ladenRoute)
+      }
+      if (voteScreen.open && round.vote) voteScreen.countdown(Math.max(0, Math.ceil((round.vote.ends_at - round.now()) / 1000)))
       music.update(!!round.round && round.status !== "ended", parade.mesh.visible ? Math.hypot(parade.x - car.x, parade.z - car.z) : Infinity)
     }
     minimap.update(car, remotes, round)

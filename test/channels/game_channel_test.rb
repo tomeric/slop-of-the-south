@@ -25,7 +25,8 @@ class GameChannelTest < ActionCable::Channel::TestCase
 
   test "applies valid hits and drops malformed ones" do
     @manager.tick(T)
-    @manager.tick(T + Game::RoundManager::INTERMISSION_MS)
+    @manager.tick(T + Game::RoundManager::VOTE_MS)
+    @manager.tick(T + Game::RoundManager::VOTE_MS + Game::RoundManager::INTERMISSION_MS)
     hits = [ { "key" => "m:1", "damage" => 30, "max" => 100 }, { "key" => "x:1", "damage" => 30, "max" => 100 }, { "key" => "m:2", "damage" => -5, "max" => 100 } ]
     perform :hit, hits: hits
     assert_equal 70, @manager.round.objects["m:1"].hp

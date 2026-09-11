@@ -186,8 +186,10 @@ to be cleared too. The float plays a vastelaovend playlist, louder the closer yo
 
 **Rounds.** `Game::RoundManager` (lib/game) owns the round per room from a thread that ticks four times a second,
 started by the first subscription so it lives in the Puma process (the development cable adapter is in-process):
-idle → intermission (20 s, a new town) → running → ended (8 s) → intermission. `Game::Arena` picks a town whose
-arena lies inside the province, draws the route through it at a random heading, lists everything in the float's
+idle → vote (15 s) → intermission (15 s, the loading screen) → running → ended (8 s) → vote. The vote offers four
+random towns; players pick one or type another, which the server looks up in `places` and adds to the list, and the
+most voted town (ties and silence fall to chance) becomes the next arena. `Game::Arena` takes that town (or a random
+one) inside the province, draws the route through it at a random heading, lists everything in the float's
 6 m corridor with the distance at which its nose arrives (PostGIS), rejects corridors with fewer than 15 or more
 than 250 obstacles or one within 120 m of the start, finds a spawn road, and asks `Game::TownInfo` for the town's
 Wikipedia paragraph and photographs. The float's position is a pure function of the start time and speed, so the

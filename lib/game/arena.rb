@@ -11,15 +11,17 @@ module Game
     OBSTACLES = 15..250                            # retry the pick when a corridor is empty or hopeless
     FIRST_AT  = 120.0                              # ...or when the first obstacle gives the players no time
 
-    # The executor's query cache would hand back the same random town for the life of the process; go around it.
-    def prepare(tries: 5)
+    # A round's arena: the given town (the vote's winner) or a random one, with the first route through it that
+    # holds a playable number of obstacles, else the last one tried. The executor's query cache would hand back the
+    # same random town for the life of the process; go around it.
+    def prepare(place: nil, tries: 5)
       ActiveRecord::Base.uncached do
         best = nil
         tries.times do
-          place = pick_place or break
-          path = path_for(place[:cx], place[:cz], rand * Math::PI)
+          town = place || pick_place or break
+          path = path_for(town[:cx], town[:cz], rand * Math::PI)
           obstacles = obstacles(path)
-          best = { arena: place.merge(half: HALF, info: TownInfo.fetch(place[:name], place[:kind])), path:, obstacles:, spawn: spawn_near(path) }
+          best = { arena: town.merge(half: HALF, info: TownInfo.fetch(town[:name], town[:kind])), path:, obstacles:, spawn: spawn_near(path) }
           return best if OBSTACLES.cover?(obstacles.size) && obstacles.first[:at] >= FIRST_AT
         end
         best
@@ -27,17 +29,30 @@ module Game
     end
 
     # a random town whose whole arena lies inside the province
-    def pick_place
-      row = conn.select_rows(<<~SQL).first
+    def pick_place = candidates(1).first
+
+    # n random towns to vote on
+    def candidates(n)
+      ActiveRecord::Base.uncached { places("ORDER BY random() LIMIT #{n.to_i}") }
+    end
+
+    # the town a player typed: an exact name first, then the shortest name starting with it
+    def find_place(name)
+      q = conn.quote(name.strip)
+      places("AND lower(p.name) = lower(#{q}) LIMIT 1").first || places("AND p.name ILIKE #{conn.quote(name.strip + '%')} ORDER BY length(p.name) LIMIT 1").first
+    end
+
+    # towns whose whole arena lies inside the province, in game units
+    def places(tail)
+      conn.select_rows(<<~SQL).map do |name, kind, x, y|
         SELECT p.name, p.kind, ST_X(p.geom), ST_Y(p.geom)
         FROM places p JOIN boundaries b ON b.name = 'Limburg'
         WHERE p.kind IN (#{KINDS.map { conn.quote(_1) }.join(",")}) AND ST_Contains(b.geom, ST_Expand(p.geom, #{HALF + 250}))
-        ORDER BY random() LIMIT 1
+        #{tail}
       SQL
-      return unless row
-      name, kind, x, y = row
-      cx, cz = World.to_game(x.to_f, y.to_f)
-      { name:, kind:, cx: cx.round(1), cz: cz.round(1) }
+        cx, cz = World.to_game(x.to_f, y.to_f)
+        { name:, kind:, cx: cx.round(1), cz: cz.round(1) }
+      end
     end
 
     # a straight route through the centre at `heading` (compass radians), ending on the arena square
