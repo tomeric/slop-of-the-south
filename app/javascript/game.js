@@ -7,6 +7,7 @@ import { setBuildingsNight } from "game/BuildingTextures"
 import { DayNight } from "game/DayNight"
 import { Environment } from "game/Environment"
 import { Shadows } from "game/Shadows"
+import { Facades } from "game/Facades"
 import { updateWater, updateGround } from "game/Cover"
 import { Scatter } from "game/Scatter"
 import { Vehicle } from "game/Vehicle"
@@ -86,6 +87,7 @@ async function main() {
   const dayNight = new DayNight(world)
   const environment = new Environment(world)                // the ambient light, baked from the sky every couple of seconds
   const shadows = new Shadows(world)                        // the sun's shadow box, hung on the camera (?schaduw)
+  const facades = new Facades(world.scene, index, chunks)   // plinths, sills, gutters and doors on the houses nearby
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
   const music   = new Music(el("muziek"))
@@ -138,7 +140,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, shadows, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, shadows, facades, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"
@@ -195,6 +197,7 @@ async function main() {
     updateWater(dayNight.env, timer.getElapsed())
     updateGround()
     scatter.update(dt, timer.getElapsed(), car)
+    facades.update(car)
     if (input.toggleMap) minimap.toggle()
     if (input.mute) round.flash(music.toggle() ? "Muziek uit" : "Muziek aan")
     if (vrij) { const step = input.timeStep; if (step) dayNight.stepHours(step) }

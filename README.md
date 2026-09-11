@@ -148,6 +148,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Buildings.js        footprints → extruded, merged meshes (OSM / fallback)
     game/BuildingMeshes.js   3D BAG LoD2.2 faces → triangulated meshes, one per material, with a facade UV
     game/BuildingTextures.js brick, pantiles, bitumen and the facade cell: one window in one bay by one storey
+    game/Facades.js          plinths, gutters, window sills and front doors on the houses near the car
     game/Textures.js         the procedural kit: canvas textures tiled by the metre, plus speckle/grain/cracks/bricks
     game/Environment.js      the ambient light, PMREM-baked from the sky DayNight draws
     game/Outline.js          the cartoon outline pass, and who opts out of it
@@ -306,6 +307,19 @@ Controls: W/↑ accelerate, S/↓ brake/reverse, A/D or ←/→ steer, Space han
 picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan, scroll to zoom, F fits the whole
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
 the clock, `?schaduw` turns the sun's shadow on.
+
+**Near the pavement** (`game/Facades.js`): the baked facade cannot do a sill (no shadow line) or a door (no depth),
+and neither is worth a triangle at two hundred metres, so both are streamed in 125 m cells around the car, three by
+three, one cell built per frame and dropped again behind. Every house gets a stone plinth around its foot, a gutter
+along its eaves, a sill under each of its painted windows and one front door on the longest wall that faces a
+street, standing on the pavement rather than on the foot BAG measured (which is up to a metre under the road). The
+sills fall exactly under the windows because they use the numbers `BuildingMeshes` already snapped — the same
+`bays = round(width / bay)` and `storeys = round(wallH / storey)` — and dividing a wall into whole bays is
+symmetric, which is why this can be done from the footprint without touching the wall faces again. The eave comes
+from the nearest broad wall face, not from the building's tallest point: a gable reaches the ridge, and one height
+for the whole building would hang a church's gutter at the height of its side chapel. A house that falls takes its
+doorstep with it (`Destructibles` calls the same collapse). The densest village tile costs +14 draw calls and
++39 k triangles on 790 / 3.06 M; `slop.tuning.buildings.detail.on = false` turns it off live.
 
 **The grain of the ground** (`game/Cover.js`): the land cover paints two things per tile — the colour canvas, and a
 512² raster of the BGT class under every square metre. The terrain shader reads that raster (nearest, with half a

@@ -82,6 +82,7 @@ export const TUNING = {
     storey: 3.0, bay: 2.8,                    // a facade cell: one storey tall, one bay wide (reload: baked into the UVs)
     minWidth: 2.0, minHeight: 2.4,            // walls smaller than this get plain brick instead of a window
     lit: 0.42,                                // how brightly the windows burn at night (live)
+    detail: { on: true, cell: 125, radius: 1 },   // plinths, gutters, sills and doors, streamed 3x3 cells around the car
   },
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)

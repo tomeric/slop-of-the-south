@@ -40,10 +40,31 @@ export function buildBuildingMeshes(meshes, reg) {
     const flat = b.roof === "horizontal"
     const roof = flat ? FLAT[h % FLAT.length] : PITCHED[(h >> 3) % PITCHED.length]
     const [ox, oy, oz] = b.o
-    // the storeys are the building's, not the face's, so every wall of it carries the same rows
-    let wallTop = -Infinity
-    for (const face of b.f) if (face[0] === 2) for (let r = 1; r < face.length; r++) { const ring = face[r]; for (let i = 1; i < ring.length; i += 3) if (ring[i] > wallTop) wallTop = ring[i] }
+    // The storeys are the building's, not the face's, so every wall of it carries the same rows. The eave is the
+    // other number worth keeping: a gable wall reaches the ridge, so the *lowest* top of the broad walls is where
+    // the roof lands — which is where game/Facades.js hangs the gutter.
+    let wallTop = -Infinity, eaveTop = Infinity
+    const walls = []                                            // [x, z, top] per broad wall face, in game units
+    for (const face of b.f) {
+      if (face[0] !== 2) continue
+      let top = -Infinity, fx0 = Infinity, fx1 = -Infinity, fz0 = Infinity, fz1 = -Infinity
+      for (let r = 1; r < face.length; r++) {
+        const ring = face[r]
+        for (let i = 0; i + 2 < ring.length; i += 3) {
+          if (ring[i + 1] > top) top = ring[i + 1]
+          if (ring[i] < fx0) fx0 = ring[i]; if (ring[i] > fx1) fx1 = ring[i]
+          if (ring[i + 2] < fz0) fz0 = ring[i + 2]; if (ring[i + 2] > fz1) fz1 = ring[i + 2]
+        }
+      }
+      if (top === -Infinity) continue
+      if (top > wallTop) wallTop = top
+      if (fx1 - fx0 + (fz1 - fz0) >= 200) {                                        // 2 m of wall, not a dormer cheek
+        eaveTop = Math.min(eaveTop, top)
+        walls.push(ox + (fx0 + fx1) / 200, oz + (fz0 + fz1) / 200, top / 100)
+      }
+    }
     const wallH = wallTop > -Infinity ? wallTop / 100 : 0
+    const eaveH = eaveTop < Infinity ? eaveTop / 100 : wallH
     const storeys = Math.max(1, Math.round(wallH / B.storey))
     const storeyH = wallH / storeys
     const windows = wallH >= B.minHeight
@@ -117,7 +138,7 @@ export function buildBuildingMeshes(meshes, reg) {
       for (const [name, p] of buckets) { const start = at[name] ?? 0, count = p.pos.length / 3 - start; if (count) parts.push({ name, start, count }) }
       if (parts.length) {
         const rings = b.fp ?? [hullXZ(xz)]
-        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, h: top - oy, max: buildingHp(rings), parts })
+        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, h: top - oy, max: buildingHp(rings), parts })
       }
     }
   }

@@ -16,6 +16,8 @@ import { texture, bricks, grain, speckle, grey, rng } from "game/Textures"
 // catches the environment, and an emissive map that lights the windows after dark.
 const BAY = 2.8, STOREY = 3.0                       // metres of one facade cell; T.buildings snaps faces to these
 const WIN = { w: 1.2, h: 1.4, sill: 0.9 }           // window size and the height of its sill above the floor
+// where the window sits inside the cell, in the cell's own metres: game/Facades.js hangs a real sill under it
+export const WINDOW = { ...WIN, bay: BAY, storey: STOREY }
 // near-greyscale on purpose: the map is the relief, the building's own palette colour is the hue, multiplied in as
 // a vertex colour. One brick map then serves every house in Limburg.
 const MORTAR = "#e6e2da"
