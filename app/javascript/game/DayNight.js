@@ -8,6 +8,7 @@ import { noOutline } from "game/Outline"
 // and sign reflectivity. ?time=23 in the URL freezes the clock at that hour (handy for looking at the night).
 export const DAY_SECONDS = 360
 export const SUNRISE = 4.5, SUNSET = 21.5
+const CLOUD_PERIOD = 256                                      // the cloud noise tiles over this, so the drift can wrap without a jump
 const SKY_DISTANCE = 3200                                    // inside the camera's far plane, beyond the loaded tiles
 
 const DAY_SKY = new THREE.Color(0x9fb8cf), DUSK_SKY = new THREE.Color(0xe39a6c), NIGHT_SKY = new THREE.Color(0x0a0f1d)
@@ -18,6 +19,8 @@ const NIGHT_ZENITH = new THREE.Color(0x03050f), NIGHT_HORIZON = new THREE.Color(
 const DAY_HEMI = new THREE.Color(0xdfe9f3), NIGHT_HEMI = new THREE.Color(0x2a3552)
 const DAY_GROUND = new THREE.Color(0x5b6b4a), NIGHT_GROUND = new THREE.Color(0x0b0d12)
 const SUN_DAY = new THREE.Color(0xfff2dc), SUN_LOW = new THREE.Color(0xffb070), MOON = new THREE.Color(0x9fb4ff)
+const DAY_CLOUD = new THREE.Color(0xffffff), DUSK_CLOUD = new THREE.Color(0xffcf9c), NIGHT_CLOUD = new THREE.Color(0x2b3450)
+const DAY_CLOUD_SHADE = new THREE.Color(0xc6d2e0), DUSK_CLOUD_SHADE = new THREE.Color(0xa8836f), NIGHT_CLOUD_SHADE = new THREE.Color(0x161d2e)
 
 export class DayNight {
   constructor(world) {
@@ -29,6 +32,7 @@ export class DayNight {
     this._sky = new THREE.Color()
     this._c = new THREE.Color()
     this._dir = new THREE.Vector3()
+    this.t0 = Date.now()                                      // clouds drift from here: the wall clock itself is far too big a noise coordinate
     // the sun and the moon: sprites far out along the light directions, moved with the camera, outside the fog
     this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTexture("sun"), transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }))
     this.sunSprite.scale.setScalar(SKY_DISTANCE * 0.16)
@@ -39,7 +43,9 @@ export class DayNight {
     // the sky: a dome around the camera shaded from horizon to zenith, with the dusk glow and the stars
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_DISTANCE * 1.1, 32, 16), noOutline(new THREE.ShaderMaterial({
       uniforms: { zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, glow: { value: DUSK_GLOW.clone() },
-                  sunDir: { value: new THREE.Vector3(1, 0, 0) }, glowStrength: { value: 0 }, stars: { value: 0 } },
+                  sunDir: { value: new THREE.Vector3(1, 0, 0) }, glowStrength: { value: 0 }, stars: { value: 0 },
+                  cloudCover: { value: 0 }, cloudScale: { value: 1 }, wind: { value: new THREE.Vector2() },
+                  cloudLit: { value: new THREE.Color() }, cloudShade: { value: new THREE.Color() } },
       vertexShader: SKY_VERTEX, fragmentShader: SKY_FRAGMENT, side: THREE.BackSide, depthWrite: false, fog: false
     })))
     this.sky.renderOrder = -10
@@ -76,6 +82,16 @@ export class DayNight {
     u.horizon.value.copy(NIGHT_HORIZON).lerp(DAY_HORIZON, daylight).lerp(DUSK_HORIZON, dusk)
     u.glowStrength.value = dusk * 1.3
     u.stars.value = smoothstep(0.16, 0.42, -elev)              // stars only once the sun is well below the horizon
+    const C = T.sky.clouds
+    u.cloudCover.value = C.cover
+    u.cloudScale.value = C.scale
+    // the noise tiles every CLOUD_PERIOD, so a drift wrapped at twice that moves both components a whole number of
+    // tiles and nothing jumps. The wall clock itself would be a noise coordinate in the millions, where a float has
+    // no fraction left and the clouds come out as one flat sheet — which is exactly what they did.
+    const drift = (Date.now() - this.t0) / 1000 * C.speed % (CLOUD_PERIOD * 2)
+    u.wind.value.set(drift, drift * 0.5)
+    u.cloudLit.value.copy(NIGHT_CLOUD).lerp(DAY_CLOUD, daylight).lerp(DUSK_CLOUD, dusk)
+    u.cloudShade.value.copy(NIGHT_CLOUD_SHADE).lerp(DAY_CLOUD_SHADE, daylight).lerp(DUSK_CLOUD_SHADE, dusk)
     w.scene.fog.color.copy(u.horizon.value)                     // the ground fades into the horizon, not into a flat sky
     w.scene.fog.near = 600 - 300 * (1 - daylight); w.scene.fog.far = 2200 - 900 * (1 - daylight)
 
@@ -123,10 +139,17 @@ const SKY_VERTEX = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`
 const SKY_FRAGMENT = /* glsl */`
-  uniform vec3 zenith, horizon, glow, sunDir;
-  uniform float glowStrength, stars;
+  uniform vec3 zenith, horizon, glow, sunDir, cloudLit, cloudShade;
+  uniform float glowStrength, stars, cloudCover, cloudScale;
+  uniform vec2 wind;
   varying vec3 vDir;
   float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+  float hash2(vec2 p) { p = mod(p, ${CLOUD_PERIOD}.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise2(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), f.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
   void main() {
     vec3 d = normalize(vDir);
     float h = clamp(d.y, 0.0, 1.0);
@@ -136,6 +159,20 @@ const SKY_FRAGMENT = /* glsl */`
     col += glow * glowStrength * exp(-h * 7.0) * (0.15 + 0.85 * pow(toSun, 4.0));
     col += glow * glowStrength * 0.35 * exp(-h * 2.5) * pow(toSun, 12.0);
     if (d.y < 0.0) col = horizon;
+    // clouds: three octaves of value noise on the dome, divided by d.y so the sheet lies flat overhead and crowds
+    // together towards the horizon, coloured by the same day and dusk the sky itself uses. No geometry, so nothing
+    // to fog, nothing to sort and nothing that can poke through a hill.
+    float cloudA = 0.0;
+    if (cloudCover > 0.001 && d.y > 0.02) {
+      vec2 q = d.xz / (d.y + 0.08) * cloudScale + wind;              // + rather than max(): a clamp smears the sheet into vertical streaks where it bites
+      float n = noise2(q) * 0.55 + noise2(q * 3.0) * 0.30 + noise2(q * 9.0) * 0.15;
+      float c = smoothstep(1.0 - cloudCover, 1.06 - cloudCover, n) * smoothstep(0.03, 0.22, d.y);
+      // a cloud is bright at its thin edges and grey where it is deep, and warms up on the side facing the sun
+      float body = smoothstep(1.0 - cloudCover, 1.3 - cloudCover, n);
+      vec3 cloud = mix(mix(cloudLit, cloudShade, body * 0.8), cloudLit, pow(toSun, 3.0) * 0.6);
+      col = mix(col, cloud, c);
+      cloudA = c;
+    }
     // stars: a sparse hash on the direction; each lit cell holds one soft dot, fading out towards the horizon.
     // The dome covers every pixel, so skip the six hashes per fragment while there are no stars to show.
     if (stars > 0.001 && d.y > 0.0) {
@@ -144,7 +181,7 @@ const SKY_FRAGMENT = /* glsl */`
       vec3 f = fract(d * 420.0) - 0.5;
       float dot_ = smoothstep(0.28, 0.05, length(f + (vec3(hash(cell + 3.0), hash(cell + 5.0), hash(cell + 7.0)) - 0.5) * 0.4));
       float star = step(0.9985, r) * dot_ * (0.45 + 0.55 * hash(cell + 1.0)) * smoothstep(0.02, 0.22, d.y);
-      col += mix(vec3(1.0), vec3(0.8, 0.9, 1.0), hash(cell + 9.0)) * star * stars * 1.5;
+      col += mix(vec3(1.0), vec3(0.8, 0.9, 1.0), hash(cell + 9.0)) * star * stars * 1.5 * (1.0 - cloudA);
     }
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>

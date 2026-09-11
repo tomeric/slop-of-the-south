@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { TUNING as T, hash32, mulberry32 } from "game/Tuning"
 import { nearRoad } from "game/ChunkManager"
+import { coverRaster, ID_N } from "game/Cover"
 import { noOutline } from "game/Outline"
 
 // What grows on the ground, in two layers. Bushes and the reeds along the water are placed per tile when the tile
@@ -9,8 +10,6 @@ import { noOutline } from "game/Outline"
 // notice, so the tufts live where the player is looking and fade out at the rim. Both layers are pure functions of
 // position (the cell or the tile key seeds the RNG, the grid runs in a fixed order), so every player sees the same
 // ground. Bushes squash on this screen when a grounded car drives through one; nothing is told to the server.
-const ID_N = 512, BLOCKED = 31                         // the class raster: one cell per metre, 31 marks a building footprint
-const SHRUB_BED = new Set([ 2, 4 ])                     // heesters and bosplantsoen: urban green that is really a bush bed
 const URBAN = new Set(["stad", "woonwijk", "dorp"])
 const CELL_PX = 128, ATLAS_W = 512, ATLAS_H = 256, MARGIN = 4
 const KINDS = ["grass", "dry", "flower", "heather", "reed", "dune", "fern"]
@@ -198,31 +197,6 @@ function bushVariant(seed, berries) {
 
 // ---- the class raster: which land cover is under (x, z), 0 where nothing grows -----------------------------------
 
-function rasterIds(tile) {
-  const c = document.createElement("canvas")
-  c.width = c.height = ID_N
-  const ctx = c.getContext("2d", { willReadFrequently: true })
-  const k = ID_N / 5000
-  for (let e = 0; e < tile.cover.length; e++) {
-    const entry = tile.cover[e], sub = tile.coverSub[e] ?? 0
-    const code = entry[0] === 3 && SHRUB_BED.has(sub) ? 9 : entry[0]
-    const start = entry[0] === 30 && !Array.isArray(entry[1]) ? 2 : 1
-    ctx.fillStyle = ctx.strokeStyle = `rgb(${code * 8},0,0)`
-    ctx.beginPath()
-    for (let r = start; r < entry.length; r++) { const ring = entry[r]; ctx.moveTo(ring[0] * k, ring[1] * k); for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i] * k, ring[i + 1] * k); ctx.closePath() }
-    ctx.fill("evenodd")
-    if (code === 19 || code === 25) { ctx.lineWidth = 1.6; ctx.stroke() }     // hedges and verges are a metre wide: without this they are all edge and nothing survives
-  }
-  const m = ID_N / tile.terrain.size, { ox, oz } = tile.terrain          // building footprints (game metres) block everything
-  ctx.setTransform(m, 0, 0, m, -ox * m, -oz * m)
-  ctx.fillStyle = `rgb(${BLOCKED * 8},0,0)`
-  for (const h of tile.objects.values()) if (h.rings) { ctx.beginPath(); for (const ring of h.rings) { ctx.moveTo(ring[0], ring[1]); for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i], ring[i + 1]); ctx.closePath() } ctx.fill("evenodd") }
-  const px = ctx.getImageData(0, 0, ID_N, ID_N).data, ids = new Uint8Array(ID_N * ID_N)
-  for (let i = 0; i < ids.length; i++) { const v = px[i * 4]; ids[i] = v & 7 ? 0 : v >> 3 }   // blended edge texels miss the ×8 lattice: nothing grows there
-  c.width = 0
-  return ids
-}
-
 function codeAt(entry, x, z) {
   const t = entry.tile.terrain, u = (x - t.ox) * ID_N / t.size | 0, v = (z - t.oz) * ID_N / t.size | 0
   return u < 0 || v < 0 || u >= ID_N || v >= ID_N ? 0 : entry.ids[v * ID_N + u]
@@ -329,7 +303,7 @@ export class Scatter {
 
   buildTile(tile) {
     const t0 = performance.now()
-    const ids = rasterIds(tile)
+    const ids = tile.ids ?? coverRaster(tile)        // built with the tile; only a reload without one falls back here
     const group = new THREE.Group(), kept = []
     const bushes = placeBushes(tile, ids), reeds = placeReeds(tile, ids)
     for (const [v, list] of Map.groupBy(bushes, (b) => b.v)) {

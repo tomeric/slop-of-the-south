@@ -80,8 +80,10 @@ export const TUNING = {
     minWidth: 2.0, minHeight: 2.4,            // walls smaller than this get plain brick instead of a window
     lit: 0.42,                                // how brightly the windows burn at night (live)
   },
+  sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
+  trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)
   ground: {
-    detail: { repeat: 125, strength: 0.45, fadeNear: 120, fadeFar: 300 },   // terrain grain: 125 repeats over 500 m = 4 m, fading out with distance (live)
+    detail: { repeat: 125, strength: 0.45, fadeNear: 120, fadeFar: 300, jitter: 0.6 },   // the grain each class wears: 125 repeats over 500 m = 4 m, fading with distance, class edges stippled by this much (live)
     paint: { minPx: 24, maxPolys: 160, budgetMs: 8 },                       // cover canvas detail: only polygons this big, this many, this long
     sway: { amp: 0.18, speed: 1.7 },                                        // grass in the wind (live)
     wake: { radius: 2.6, push: 0.55 },                                      // grass bends away from the car and springs back (live)

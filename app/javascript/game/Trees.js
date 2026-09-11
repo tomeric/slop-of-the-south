@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { pointKey, hideInstance } from "game/Destructibles"
+import { TUNING as T } from "game/Tuning"
 
 // Procedural low-poly trees: trunk, recursive branches and leaf clusters at the tips. A handful of variants per
 // kind is generated once from fixed seeds; every tree picks its variant, rotation, width and tint from a hash of
@@ -20,6 +21,8 @@ const LEAVES = {
   3: [0x6c9a46, 0x76a24c, 0x81a952]                              // hoogstam fruit trees
 }
 const ICO = new THREE.IcosahedronGeometry(1, 0).attributes.position   // 20-face leaf cluster template
+const HSL = { h: 0, s: 0, l: 0 }
+const WHITE = new THREE.Color(0xffffff)
 
 const geometries = {}
 for (const kind of [0, 1, 2, 3]) geometries[kind] = Array.from({ length: VARIANTS[kind] }, (_, i) => buildVariant(kind, 1000 * (kind + 1) + 7 * i))
@@ -40,11 +43,17 @@ export function buildTrees(trees, heightAt, reg) {
   for (const { geo, list, kind } of groups.values()) {
     const mesh = new THREE.InstancedMesh(geo, material, list.length)
     list.forEach(([x, z, , h], i) => {
-      const spin = rand(z, x), width = (kind === 3 ? 1.35 : 1) * (0.85 + 0.3 * rand(x + 1, z)), tint = 0.85 + 0.3 * rand(x, z + 1)
+      const spin = rand(z, x), width = (kind === 3 ? 1.35 : 1) * (0.85 + 0.3 * rand(x + 1, z))
       q.setFromAxisAngle(up, spin * Math.PI * 2)
       s.set(h * width, h, h * width)                           // geometry is 1 unit tall
       mesh.setMatrixAt(i, m.compose(p.set(x, heightAt(x, z) - 0.15, z), q, s))
-      mesh.setColorAt(i, color.setRGB(tint, tint * (0.97 + 0.06 * rand(x, z + 2)), tint * 0.95))
+      // Brightness alone leaves a wood looking like one tree stamped a thousand times; a little hue is what breaks
+      // it up. The instance colour multiplies the leaf colour already in the vertices, so this is a pale tint around
+      // white, nudged towards the kind's own hue — a conifer stand does not drift off towards meadow green.
+      const J = T.trees.jitter
+      color.setHex(LEAVES[kind][0]).getHSL(HSL)
+      mesh.setColorAt(i, color.setHSL(HSL.h + (rand(x, z + 1) - 0.5) * J.hue, J.sat, 0.5)
+        .lerp(WHITE, J.pale).multiplyScalar(J.level + (rand(x, z + 2) - 0.5) * J.light))
       reg?.(pointKey("t", x, z), { kind: "t", x, z, r: THREE.MathUtils.clamp(0.08 * h, 0.3, 1), h, max: 30, remove: () => hideInstance(mesh, i) })
     })
     mesh.instanceMatrix.needsUpdate = true

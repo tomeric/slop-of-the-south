@@ -88,11 +88,11 @@ it at junction nodes so meeting roads share a height, and clamps it to at most `
 `FILL_LIMIT` (6 m major, 1.5 m minor, 0.4 m cycleway/track) above the terrain; bridges float. The tile's height grid is
 then deformed: within `max(width/2 + 0.5, 5)` m of the centreline the terrain *is* the road level (the bed), the next
 `VERGE` 2.5 m sit a `CURB` 0.12 m higher (the sidewalk strip), and over `SHOULDER` 6 m more it blends back to nature.
-Junction patches get the same seat. On the client `Roads.js` draws the carriageway `ROAD_LIFT` 0.05 m above the higher
-of the road level and the terrain under each vertex (the 10 m grid smears the curb across the ribbon edge, so ribbons
-follow the terrain where it pokes up), the procedural sidewalks `CURB` above that, and `ChunkManager.heightAt` gives
-the car the same surface, blended into the terrain over ±0.3 m at the ribbon edge so the wheels roll over the curb.
-Order from low to high: road < painted pavement / verge < sidewalk ribbon. `test/services/road_builder_test.rb` pins
+Junction patches get the same seat. On the client the surveyed BGT outlines (`game/Surfaces.js`) are what is drawn,
+each cut to the terrain grid where the ground under it bends (`game/Drape.js`) and lifted `LIFT` 0.07 m, with a
+`KERB` 0.12 m skirt around the footways and islands; `Roads.js` keeps the lane markings and, for the roads BGT does
+not cover, the old ribbon. `ChunkManager.heightAt` gives the car that same surface, blended into the terrain over
+±0.3 m at the ribbon edge so the wheels roll over the curb. Order from low to high: road < painted verge < footway. `test/services/road_builder_test.rb` pins
 the numbers down; rebuild tiles (`tiles:clean tiles:build`) after touching any of it.
 
 ### 1.4 b Water
@@ -110,7 +110,10 @@ A full day takes 6 real minutes (`game/DayNight.js`, `DAY_SECONDS`), on the wall
 time; the HUD shows the game clock. Sunrise 06:00, noon 12:00, sunset 18:00, twilight until about 19:00. The sun
 light swings east → south → west and gives way to a faint moon; sky, fog and hemisphere light darken with it. The sky
 is a shaded dome around the camera (horizon → zenith gradient per phase, a glow banked around the sun at dawn and
-dusk, stars once the sun is well below the horizon); the fog takes the horizon colour so the land fades into it. The
+dusk, stars once the sun is well below the horizon, and a sheet of cloud: three octaves of value noise divided by the
+view direction's own height, so it lies flat overhead and crowds together towards the horizon, white at its thin
+edges and grey where it is deep, warm on the side facing the sun, and drifting — no geometry, nothing to sort and
+nothing that can poke through a hill; `slop.tuning.sky.clouds` has cover, scale and speed, cover 0 turns it off); the fog takes the horizon colour so the land fades into it. The
 sun and the moon are visible as sprites far out along their compass directions on a flattened arc (2°–18° up, since
 the chase camera only sees ~22° above the horizon); the sun reddens and fades at the horizon, the moon rises low in
 the opposite sky as the sun sets. Face them to see them: east in the morning, south at midday, west in the afternoon. A
@@ -140,7 +143,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     entrypoints/game.js      boot, game loop
     game/World.js            renderer, camera, sky, fog, lights
     game/ChunkManager.js     loads/unloads tiles in a radius around the car
-    game/TerrainTile.js      heightmap → mesh, bilinear heightAt(x, z)
+    game/TerrainTile.js      heightmap → mesh; heightAt(x, z) on the triangle the mesh draws; grid normals for the seams
     game/Roads.js            polylines → draped ribbons
     game/Buildings.js        footprints → extruded, merged meshes (OSM / fallback)
     game/BuildingMeshes.js   3D BAG LoD2.2 faces → triangulated meshes, one per material, with a facade UV
@@ -152,7 +155,8 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
     game/Bridges.js          decks with a fascia and a soffit, parapets, railings, abutments and piers
     game/Drape.js            flat polygons → triangles cut to the terrain grid where the ground bends
-    game/Cover.js            land cover → per-tile canvas texture on the terrain; water polygons → draped skins
+    game/Cover.js            land cover → per-tile canvas texture and class raster on the terrain, plus the grain
+                             each class wears close up; water polygons → draped skins
     game/Trees.js            procedural branching trees, a few seeded variants per kind, instanced per tile;
                              variant, rotation, width and tint come from the tree position, so every tree is stable
     game/Locator.js          nearest named road + nearest place for the street sign
@@ -301,6 +305,20 @@ Controls: W/↑ accelerate, S/↓ brake/reverse, A/D or ←/→ steer, Space han
 picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan, scroll to zoom, F fits the whole
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
 the clock.
+
+**The grain of the ground** (`game/Cover.js`): the land cover paints two things per tile — the colour canvas, and a
+512² raster of the BGT class under every square metre. The terrain shader reads that raster (nearest, with half a
+texel of hash jitter so a class edge stipples instead of showing a straight 1 m line), looks the class up in a shared
+32 × 1 table for its layer and strength, and multiplies two octaves of a shared six-layer grain array over the colour:
+loose soil, grass blades, ploughed clods, gravel, forest floor, paving speckle. It fades out by 300 m and is branched
+behind that fade, so nothing is paid for it in the distance. The raster is one R8 texture per tile, freed with the
+tile; the array and the table are shared, and every tile still shares one program — the raster reaches the shader
+through a per-material uniform slot, and `customProgramCacheKey` sees the same source text for all of them.
+
+**Terrain seams** (`ChunkManager#stitch`): neighbouring tiles share their edge samples but each computed its normals
+from its own grid alone, so the ground was shaded as if it stopped at every tile edge — up to 8° of crease every
+500 m. When a tile lands, the rows it shares with its loaded neighbours are recomputed from both grids and written
+into both meshes; a corner belongs to four tiles and comes right as each of them arrives. 55 µs per tile.
 
 **Outlines** (`game/Outline.js`): three's `OutlineEffect` draws an inverted hull around buildings, cars, the float
 and the rubble. It is a second pass, so everything else opts out — the ground, roads, water, the sky and the sign

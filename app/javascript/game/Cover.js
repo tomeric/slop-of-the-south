@@ -149,47 +149,162 @@ function dots(g, rnd, at, n, min, max, color) {
 
 // ---- the terrain material: the cover map with a tiling grain multiplied in up close -----------------------------------
 
-let detailTex = null
-function detailTexture() {                   // 256², mean grey, seamless: soft blobs and short blade-like strokes; a multiplier, so no colour space
-  if (detailTex) return detailTex
+// ---- the class raster: which land cover is under each square metre -------------------------------------------------
+
+// One byte per square metre of the tile, shared by two consumers: the ground shader picks the grain a class wears
+// from it, and game/Scatter.js decides what grows where. Built once the buildings are in, because their footprints
+// are stamped over the land cover — nothing grows or grains inside a house.
+export const ID_N = 512, BLOCKED = 31
+const SHRUB_BED = new Set([ 2, 4 ])                     // heesters and bosplantsoen: urban green that is really a bush bed
+
+export function coverRaster(tile) {
   const c = document.createElement("canvas")
-  c.width = c.height = 256
-  const g = c.getContext("2d"), rnd = mulberry32(11)
-  const at = (fn) => { for (const dx of [-256, 0, 256]) for (const dy of [-256, 0, 256]) { g.save(); g.translate(dx, dy); fn(); g.restore() } }
-  g.fillStyle = "#808080"; g.fillRect(0, 0, 256, 256)
-  for (let i = 0; i < 300; i++) {
-    const x = rnd() * 256, y = rnd() * 256, r = 6 + rnd() * 14, light = rnd() > 0.5
-    at(() => { const grad = g.createRadialGradient(x, y, 0, x, y, r); grad.addColorStop(0, light ? "rgba(255,255,255,.16)" : "rgba(0,0,0,.16)"); grad.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grad; g.fillRect(x - r, y - r, 2 * r, 2 * r) })
+  c.width = c.height = ID_N
+  const ctx = c.getContext("2d", { willReadFrequently: true })
+  const k = ID_N / 5000
+  for (let e = 0; e < tile.cover.length; e++) {
+    const entry = tile.cover[e], sub = tile.coverSub[e] ?? 0
+    const code = entry[0] === 3 && SHRUB_BED.has(sub) ? 9 : entry[0]
+    const start = entry[0] === 30 && !Array.isArray(entry[1]) ? 2 : 1
+    ctx.fillStyle = ctx.strokeStyle = `rgb(${code * 8},0,0)`
+    ctx.beginPath()
+    for (let r = start; r < entry.length; r++) { const ring = entry[r]; ctx.moveTo(ring[0] * k, ring[1] * k); for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i] * k, ring[i + 1] * k); ctx.closePath() }
+    ctx.fill("evenodd")
+    if (code === 19 || code === 25) { ctx.lineWidth = 1.6; ctx.stroke() }     // hedges and verges are a metre wide: without this they are all edge and nothing survives
   }
-  g.lineWidth = 1.5
-  for (let i = 0; i < 900; i++) {
-    const x = rnd() * 256, y = rnd() * 256, a = rnd() * Math.PI, l = 4 + rnd() * 6
-    g.strokeStyle = rnd() > 0.5 ? "rgba(255,255,255,.22)" : "rgba(0,0,0,.22)"
-    at(() => { g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke() })
-  }
-  detailTex = new THREE.CanvasTexture(c)
-  detailTex.wrapS = detailTex.wrapT = THREE.RepeatWrapping
-  detailTex.anisotropy = 4
-  return detailTex
+  const m = ID_N / tile.terrain.size, { ox, oz } = tile.terrain          // building footprints (game metres) block everything
+  ctx.setTransform(m, 0, 0, m, -ox * m, -oz * m)
+  ctx.fillStyle = `rgb(${BLOCKED * 8},0,0)`
+  for (const h of tile.objects.values()) if (h.rings) { ctx.beginPath(); for (const ring of h.rings) { ctx.moveTo(ring[0], ring[1]); for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i], ring[i + 1]); ctx.closePath() } ctx.fill("evenodd") }
+  const px = ctx.getImageData(0, 0, ID_N, ID_N).data, ids = new Uint8Array(ID_N * ID_N)
+  for (let i = 0; i < ids.length; i++) { const v = px[i * 4]; ids[i] = v & 7 ? 0 : v >> 3 }   // blended edge texels miss the ×8 lattice: nothing grows there
+  c.width = 0
+  return ids
 }
 
-const groundU = { strength: { value: 0.35 }, repeat: { value: 125 }, fade: { value: new THREE.Vector2(120, 300) } }   // shared by every tile's material
 
-// one function for every tile material, so three compiles the program once
-function groundShader(shader) {
-  shader.uniforms.detailMap = { value: detailTexture() }
+// ---- the grain each class wears -----------------------------------------------------------------------------------
+
+// Six seamless greyscale layers in one array texture: what a square metre of this class looks like from a metre up.
+// The painted canvas above gives the colour and the metre-scale pattern; this gives the centimetre-scale one, and
+// the class raster of the tile decides which layer a texel gets.
+const LAYERS = [
+  ["grond", (g, rnd, at) => { blobs(g, rnd, at, 260, 8, 18, 0.15); strokes(g, rnd, at, 900, 4, 6, 0.22) }],       // 0 the old shared grain
+  ["gras", (g, rnd, at) => { strokes(g, rnd, at, 2600, 3, 7, 0.3); blobs(g, rnd, at, 120, 10, 26, 0.1) }],        // 1 blades
+  ["kluiten", (g, rnd, at) => { blobs(g, rnd, at, 700, 4, 11, 0.3); strokes(g, rnd, at, 300, 8, 14, 0.12) }],     // 2 ploughed soil
+  ["grind", (g, rnd, at) => { blobs(g, rnd, at, 2200, 2, 5, 0.35) }],                                              // 3 gravel and sand
+  ["bosgrond", (g, rnd, at) => { blobs(g, rnd, at, 500, 5, 14, 0.3); strokes(g, rnd, at, 700, 5, 10, 0.25) }],    // 4 leaf litter
+  ["steen", (g, rnd, at) => { blobs(g, rnd, at, 1400, 2, 4, 0.18); strokes(g, rnd, at, 120, 20, 40, 0.08) }],     // 5 paving speckle
+]
+// land-cover code → [layer, strength]; anything unlisted gets the plain grain at half strength
+const CLASS_LAYER = {
+  1: [1, 1], 2: [1, 1], 3: [1, 0.9], 5: [1, 0.9], 6: [1, 0.9], 25: [1, 1], 17: [1, 0.8],
+  4: [2, 1.15], 24: [2, 0.9], 12: [2, 0.8],
+  11: [3, 0.9], 18: [3, 0.9], 22: [3, 0.6], 23: [3, 0.7],
+  7: [4, 1], 13: [4, 1], 14: [4, 1], 15: [4, 1], 8: [4, 0.9], 9: [4, 0.9], 10: [4, 0.8], 16: [4, 0.8], 19: [4, 0.9],
+  20: [5, 0.5], 21: [5, 0.4],
+}
+const DETAIL_N = 256
+
+function blobs(g, rnd, at, n, min, max, alpha) {
+  for (let i = 0; i < n; i++) {
+    const x = rnd() * DETAIL_N, y = rnd() * DETAIL_N, r = min + rnd() * (max - min), light = rnd() > 0.5
+    at(() => { const grad = g.createRadialGradient(x, y, 0, x, y, r); grad.addColorStop(0, light ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`); grad.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grad; g.fillRect(x - r, y - r, 2 * r, 2 * r) })
+  }
+}
+
+function strokes(g, rnd, at, n, min, max, alpha) {
+  g.lineWidth = 1.5
+  for (let i = 0; i < n; i++) {
+    const x = rnd() * DETAIL_N, y = rnd() * DETAIL_N, a = rnd() * Math.PI, l = min + rnd() * (max - min)
+    g.strokeStyle = rnd() > 0.5 ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`
+    at(() => { g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke() })
+  }
+}
+
+let detailArray = null
+function detailLayers() {
+  if (detailArray) return detailArray
+  const data = new Uint8Array(DETAIL_N * DETAIL_N * LAYERS.length)
+  const c = document.createElement("canvas")
+  c.width = c.height = DETAIL_N
+  const g = c.getContext("2d", { willReadFrequently: true })
+  const at = (fn) => { for (const dx of [-DETAIL_N, 0, DETAIL_N]) for (const dy of [-DETAIL_N, 0, DETAIL_N]) { g.save(); g.translate(dx, dy); fn(); g.restore() } }
+  LAYERS.forEach(([, draw], i) => {
+    const rnd = mulberry32(11 + i * 7)
+    g.fillStyle = "#808080"; g.fillRect(0, 0, DETAIL_N, DETAIL_N)
+    draw(g, rnd, at)
+    const px = g.getImageData(0, 0, DETAIL_N, DETAIL_N).data
+    for (let k = 0; k < DETAIL_N * DETAIL_N; k++) data[i * DETAIL_N * DETAIL_N + k] = px[k * 4]
+  })
+  c.width = 0
+  detailArray = new THREE.DataArrayTexture(data, DETAIL_N, DETAIL_N, LAYERS.length)
+  detailArray.format = THREE.RedFormat
+  detailArray.wrapS = detailArray.wrapT = THREE.RepeatWrapping
+  detailArray.minFilter = THREE.LinearMipmapLinearFilter
+  detailArray.magFilter = THREE.LinearFilter
+  detailArray.generateMipmaps = true
+  detailArray.needsUpdate = true
+  return detailArray
+}
+
+// a 32 × 1 lookup: which layer a land-cover code wears, and how hard
+let classTex = null
+function classLookup() {
+  if (classTex) return classTex
+  const data = new Uint8Array(32 * 2)
+  for (let code = 0; code < 32; code++) {
+    const [layer, strength] = CLASS_LAYER[code] ?? [0, 0.5]
+    data[code * 2] = Math.round(layer / 8 * 255)
+    data[code * 2 + 1] = Math.round(Math.min(1, strength) * 255)
+  }
+  classTex = new THREE.DataTexture(data, 32, 1, THREE.RGFormat)
+  classTex.minFilter = classTex.magFilter = THREE.NearestFilter
+  classTex.needsUpdate = true
+  return classTex
+}
+
+const groundU = { strength: { value: 0.35 }, repeat: { value: 125 }, fade: { value: new THREE.Vector2(120, 300) }, jitter: { value: 0.6 } }   // shared by every tile's material
+
+// One function for every tile material, so three compiles the program once (customProgramCacheKey is its source
+// text). The tile's own class raster rides in through the material, which each tile has of its own.
+function groundShader(shader, ids) {
+  shader.uniforms.detailMaps = { value: detailLayers() }
+  shader.uniforms.classMap = { value: classLookup() }
+  shader.uniforms.idMap = ids
   shader.uniforms.detailStrength = groundU.strength
   shader.uniforms.detailRepeat = groundU.repeat
   shader.uniforms.detailFade = groundU.fade
-  shader.fragmentShader = "uniform sampler2D detailMap; uniform float detailStrength, detailRepeat; uniform vec2 detailFade;\n" +
-    shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+  shader.uniforms.detailJitter = groundU.jitter
+  shader.fragmentShader = `
+    precision highp sampler2DArray;
+    uniform sampler2DArray detailMaps;
+    uniform sampler2D classMap, idMap;
+    uniform float detailStrength, detailRepeat, detailJitter;
+    uniform vec2 detailFade;
+  ` + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
       float dk = detailStrength * (1.0 - smoothstep(detailFade.x, detailFade.y, length(vViewPosition)));
-      diffuseColor.rgb *= mix(1.0, texture2D(detailMap, vMapUv * detailRepeat).r * 2.0, dk);`)
+      if (dk > 0.002) {
+        // the raster shares the cover map's frame, but a data texture ignores flipY, so it is read upside down.
+        // Half a texel of hash jitter turns the straight metre-wide class edge into a stipple.
+        vec2 j = (fract(sin(vMapUv * 3072.0 * vec2(12.9898, 78.233)) * 43758.5453) - 0.5) * detailJitter / 512.0;
+        float id = texture2D(idMap, vec2(vMapUv.x, 1.0 - vMapUv.y) + j).r * 255.0;
+        vec2 cls = texture2D(classMap, vec2((id + 0.5) / 32.0, 0.5)).rg;
+        float layer = floor(cls.r * 8.0 + 0.5);
+        float a = texture(detailMaps, vec3(vMapUv * detailRepeat, layer)).r;
+        float b = texture(detailMaps, vec3(vMapUv * detailRepeat * 0.37, layer)).r;   // a second octave kills the four-metre tile
+        diffuseColor.rgb *= mix(1.0, a * b * 4.0, dk * cls.g);
+      }`)
 }
+
+const blankIds = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat)
+blankIds.needsUpdate = true
 
 export function groundMaterial(texture) {
   const m = new THREE.MeshStandardMaterial({ map: texture, roughness: 1 })
-  m.onBeforeCompile = groundShader
+  const ids = { value: blankIds }                       // the tile hands over its own raster once the buildings are in
+  m.userData.ids = ids
+  m.onBeforeCompile = (shader) => groundShader(shader, ids)
   return noOutline(m)
 }
 
@@ -198,6 +313,7 @@ export function updateGround(G = T.ground.detail) {
   groundU.strength.value = G.strength
   groundU.repeat.value = G.repeat
   groundU.fade.value.set(G.fadeNear, G.fadeFar)
+  groundU.jitter.value = G.jitter ?? 0.6
 }
 
 const LIFT = 0.12, MAX_EDGE = 40

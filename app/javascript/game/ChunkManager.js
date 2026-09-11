@@ -1,5 +1,5 @@
 import * as THREE from "three"
-import { TerrainTile } from "game/TerrainTile"
+import { TerrainTile, gridNormal } from "game/TerrainTile"
 import { buildRoads } from "game/Roads"
 import { buildSurfaces } from "game/Surfaces"
 import { buildBridges } from "game/Bridges"
@@ -8,7 +8,7 @@ import { buildBuildingMeshes } from "game/BuildingMeshes"
 import { buildTrees } from "game/Trees"
 import { buildLamps, buildSignals } from "game/Furniture"
 import { buildSigns } from "game/Signs"
-import { paintCover, buildWater } from "game/Cover"
+import { paintCover, buildWater, coverRaster } from "game/Cover"
 import { noOutlineInstanced } from "game/Outline"
 import { ROAD_LIFT } from "game/Roads"
 
@@ -17,6 +17,8 @@ import { ROAD_LIFT } from "game/Roads"
 // fetched tiles wait in a queue and at most one is built per frame — crossing a tile edge queues five at once, and
 // building them all in one frame was a visible hitch. Every destructible object a tile builds is registered on the
 // tile entry; hooks.onTile / hooks.onDrop hand them to the Destructibles index.
+const _normal = new THREE.Vector3()
+
 export class ChunkManager {
   constructor(scene, config, hooks = {}, radius = 2) {
     this.scene = scene
@@ -144,12 +146,51 @@ export class ChunkManager {
       noOutlineInstanced(group)                                   // trees, grass, lamps, signs, pads: outlines ignore instanceMatrix
       this.scene.add(group)
       const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [], coverSub: data.cover_sub ?? [], surfaces: data.surfaces ?? [] }
+      if (tile.cover.length) { tile.ids = coverRaster(tile); terrain.setIds(tile.ids) }   // after the buildings: their footprints are in it
       this.tiles.set(key, tile)
+      this.stitch(tile)
       this.hooks.onTile?.(tile)
     } catch (e) {
       console.warn(e)
       this.tiles.delete(key)
     }
+  }
+
+  // Neighbouring tiles share their edge samples, but each computes its normals from its own grid alone, so along
+  // every seam the ground is shaded as if it stopped there: a crease every 500 m, worst where a slope runs across
+  // the edge. When a tile lands, recompute the row it shares with each loaded neighbour — on both meshes, since
+  // they hold those vertices twice — sampling both grids. A corner belongs to four tiles and comes right as each
+  // of them arrives. Tile y grows northwards while a tile's own rows run north → south, so ty + 1 is the tile
+  // above and it is that tile's *last* row we share.
+  stitch(tile) {
+    const m = this.cfg.height_n - 1
+    const line = (fixed, along) => Array.from({ length: m + 1 }, (_, i) => (along === "r" ? [fixed, i] : [i, fixed]))
+    for (const [dx, dy, mine, theirs] of [[-1, 0, line(0, "r"), line(m, "r")], [1, 0, line(m, "r"), line(0, "r")],
+                                          [0, 1, line(0, "c"), line(m, "c")], [0, -1, line(m, "c"), line(0, "c")]]) {
+      const other = this.tiles.get(`${tile.tx + dx}_${tile.ty + dy}`)
+      if (!other || other.loading) continue
+      this.renormal(tile, mine); this.renormal(other, theirs)
+    }
+  }
+
+  renormal(tile, cells) {
+    const at = (c, r) => this.sampleGrid(tile, c, r)
+    for (const [c, r] of cells) {
+      gridNormal(at, c, r, this.cfg.height_step, _normal)
+      tile.terrain.writeNormal(c, r, _normal)
+    }
+    tile.terrain.normalsChanged()
+  }
+
+  // One height sample in a tile's own grid coordinates, allowed to run a step past any edge: the neighbour's grid
+  // carries on where this one stops, and its far row is the same row of samples. null where nothing is loaded.
+  sampleGrid(tile, c, r) {
+    const m = this.cfg.height_n - 1
+    let tx = tile.tx, ty = tile.ty
+    if (c < 0) { tx--; c += m } else if (c > m) { tx++; c -= m }
+    if (r < 0) { ty++; r += m } else if (r > m) { ty--; r -= m }
+    const t = tx === tile.tx && ty === tile.ty ? tile : this.tiles.get(`${tx}_${ty}`)
+    return t && !t.loading ? t.terrain.height(c, r) : null
   }
 
   dispose(t) {
