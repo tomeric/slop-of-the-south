@@ -9,23 +9,43 @@ module Game
     NOSE      = Round::FLOAT[:length] / 2.0
     KINDS     = %w[city town village].freeze
     OBSTACLES = 15..250                            # retry the pick when a corridor is empty or hopeless
-    FIRST_AT  = 120.0                              # ...or when the first obstacle gives the players no time
+    FIRST_AT  = 120.0                              # metres of clear route the float gets before its first obstacle
 
     # A round's arena: the given town (the vote's winner) or a random one, with the first route through it that
-    # holds a playable number of obstacles, else the last one tried. The executor's query cache would hand back the
-    # same random town for the life of the process; go around it.
+    # holds a playable number of obstacles, else the last one tried. Every route gets its runway. The executor's
+    # query cache would hand back the same random town for the life of the process; go around it.
     def prepare(place: nil, tries: 5)
       ActiveRecord::Base.uncached do
         best = nil
         tries.times do
           town = place || pick_place or break
-          path = path_for(town[:cx], town[:cz], rand * Math::PI)
-          obstacles = obstacles(path)
+          path, obstacles = route_with_runway(town)
           best = { arena: town.merge(half: HALF, info: TownInfo.fetch(town[:name], town[:kind])), path:, obstacles:, spawn: spawn_near(path) }
-          return best if OBSTACLES.cover?(obstacles.size) && obstacles.first[:at] >= FIRST_AT
+          return best if OBSTACLES.cover?(obstacles.size) && (obstacles.empty? || obstacles.first[:at] >= FIRST_AT)
         end
         best
       end
+    end
+
+    # a route through the town at a random heading, its start pulled back along the line until the float has
+    # FIRST_AT metres of clear road before whatever stands first; the stretch added is checked for obstacles too
+    def route_with_runway(town)
+      path = path_for(town[:cx], town[:cz], rand * Math::PI)
+      obstacles = obstacles(path)
+      3.times do
+        first = obstacles.first
+        break unless first && first[:at] < FIRST_AT
+        path = extend_start(path, FIRST_AT - first[:at] + 20)
+        obstacles = obstacles(path)
+      end
+      [ path, obstacles ]
+    end
+
+    # the same line, started `by` metres earlier
+    def extend_start(path, by)
+      dx, dz = path[:x1] - path[:x0], path[:z1] - path[:z0]
+      len = Math.hypot(dx, dz)
+      { x0: (path[:x0] - dx / len * by).round(1), z0: (path[:z0] - dz / len * by).round(1), x1: path[:x1], z1: path[:z1], length: (len + by).round(1) }
     end
 
     # a random town whose whole arena lies inside the province

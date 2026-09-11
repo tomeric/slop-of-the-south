@@ -12,6 +12,12 @@ module Game
       end
     end
 
+    test "a route can be started earlier along its own line" do
+      path = Arena.new.path_for(0, 0, Math::PI / 2)                   # due east: from (-1250, 0) to (1250, 0)
+      longer = Arena.new.extend_start(path, 100)
+      assert_equal [ -1350.0, 0.0, 1250.0, 0.0, 2600.0 ], longer.values_at(:x0, :z0, :x1, :z1, :length)
+    end
+
     test "compass headings become yaws in (-π, π]" do
       arena = Arena.new
       assert_in_delta 0, arena.send(:yaw, 0), 0.001

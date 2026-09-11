@@ -190,8 +190,9 @@ idle → vote (15 s) → intermission (15 s, the loading screen) → running →
 random towns; players pick one or type another, which the server looks up in `places` and adds to the list, and the
 most voted town (ties and silence fall to chance) becomes the next arena. `Game::Arena` takes that town (or a random
 one) inside the province, draws the route through it at a random heading, lists everything in the float's
-6 m corridor with the distance at which its nose arrives (PostGIS), rejects corridors with fewer than 15 or more
-than 250 obstacles or one within 120 m of the start, finds a spawn road, and asks `Game::TownInfo` for the town's
+6 m corridor with the distance at which its nose arrives (PostGIS), pulls the start back along the line until the
+float has 120 m of clear road before the first obstacle (checking the added stretch too), prefers corridors with
+15 to 250 obstacles, finds a spawn road, and asks `Game::TownInfo` for the town's
 Wikipedia paragraph and photographs. The float's position is a pure function of the start time and speed, so the
 clients render it from a clock offset (`now` on every manager message) without traffic. `Game::Round` owns hit
 points: a client reports damage with the object's size-based maximum, buildings crumble to rubble at zero (half
