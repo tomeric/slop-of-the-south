@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { TUNING as T } from "game/Tuning"
 
 // A full day every 6 minutes, on the wall clock so every player shares the same time of day. Sunrise at 04:30,
 // solar noon at 13:00, sunset at 21:30 game time. The sun light swings east → south → west and fades out; the sky,
@@ -99,11 +100,11 @@ export class DayNight {
     this.moonSprite.position.copy(cam).addScaledVector(this._dir, SKY_DISTANCE)
     this.moonSprite.material.opacity = smoothstep(0.02, 0.2, -elev)
     w.sun.color.copy(daylight > 0.02 ? this._c.copy(SUN_DAY).lerp(SUN_LOW, dusk) : MOON)
-    w.sun.intensity = 1.6 * daylight + 0.12 * (1 - daylight)
+    w.sun.intensity = (1.6 * daylight + 0.12 * (1 - daylight)) * T.light.sun
     w.hemi.color.copy(this._c.copy(NIGHT_HEMI).lerp(DAY_HEMI, daylight))
     w.hemi.groundColor.copy(this._c.copy(NIGHT_GROUND).lerp(DAY_GROUND, daylight))
-    w.hemi.intensity = 0.22 + 0.68 * daylight
-    w.renderer.toneMappingExposure = 1 + 0.35 * (1 - daylight)
+    w.hemi.intensity = (0.22 + 0.68 * daylight) * T.light.hemi          // the environment map is a sky light too: do not count it twice
+    w.renderer.toneMappingExposure = T.light.exposure + T.light.nightExposure * (1 - daylight)
 
     this.darkness = 1 - daylight
     this.env.darkness = this.darkness

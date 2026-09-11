@@ -68,6 +68,12 @@ export const TUNING = {
     radius: 2.2, respawn: 20, height: 0.5, size: 2.4,
   },
   fx: { smokeRate: 28, smokeLife: 0.7, smokeSlip: 0.18, smokePool: 64, flameFlicker: 0.4 },
+  light: {
+    exposure: 0.95, nightExposure: 0.25,      // toneMappingExposure = exposure + nightExposure × (1 − daylight) (live)
+    hemi: 0.45, sun: 1.35,                    // the sky light and the sun, now that the environment map carries the ambient (live)
+    env: { on: true, size: 64, sigma: 0.08, intensity: [0.3, 0.85], glare: 6,   // the baked sky (game/Environment.js)
+           step: 0.02, minInterval: 0.25, maxInterval: 2, skipMs: 24 },         // re-bake this far apart, never on a slow frame
+  },
   ground: {
     detail: { repeat: 125, strength: 0.45, fadeNear: 120, fadeFar: 300 },   // terrain grain: 125 repeats over 500 m = 4 m, fading out with distance (live)
     paint: { minPx: 24, maxPolys: 160, budgetMs: 8 },                       // cover canvas detail: only polygons this big, this many, this long

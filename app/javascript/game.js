@@ -4,6 +4,7 @@ import { ChunkManager } from "game/ChunkManager"
 import { updateSignals, setNightLevel } from "game/Furniture"
 import { setSignsNight } from "game/Signs"
 import { DayNight } from "game/DayNight"
+import { Environment } from "game/Environment"
 import { updateWater, updateGround } from "game/Cover"
 import { Scatter } from "game/Scatter"
 import { Vehicle } from "game/Vehicle"
@@ -76,6 +77,7 @@ async function main() {
   const combat  = new Combat({ scene: world.scene, index, effects, heightAt: (x, z) => chunks.heightAt(x, z), car, send: (action, data) => { if (vrij) { if (action === "hit") localHit(data); return } net.send(action, data) } })
   const remotes = new RemoteCars(world.scene, effects.smoke)
   const dayNight = new DayNight(world)
+  const environment = new Environment(world)                // the ambient light, baked from the sky every couple of seconds
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
   const music   = new Music(el("muziek"))
@@ -128,7 +130,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"
@@ -179,6 +181,7 @@ async function main() {
     chunks.update(car.x, car.z)
     updateSignals()
     const darkness = dayNight.update()
+    environment.update(dayNight.env, world.hemi.groundColor, timer.getElapsed(), dt * 1000)
     car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness)
     updateWater(dayNight.env, timer.getElapsed())
     updateGround()
