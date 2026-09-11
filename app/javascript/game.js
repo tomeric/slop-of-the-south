@@ -26,6 +26,7 @@ import { Effects } from "game/Effects"
 import { VehicleFx } from "game/VehicleFx"
 import { Pickups } from "game/Pickups"
 import { TUNING } from "game/Tuning"
+import { Bench, SPOTS } from "game/Bench"
 
 async function main() {
   const config = await (await fetch("/api/world")).json()
@@ -39,7 +40,10 @@ async function main() {
   }
   // ?vrij = vrij rijden: geen ronde, geen server. Rijd waar je wilt, teleporteer met de kaart, sloop wat je wilt —
   // handig om naar de wereld te kijken zonder dat een ronde je elk kwartier ergens anders neerzet.
-  const vrij = new URLSearchParams(location.search).has("vrij")
+  // ?bench=bos|dorp|veld measures the frame cost at a fixed spot (game/Bench.js); it drives itself, so it rides on
+  // vrij rijden
+  const benchSpot = SPOTS[new URLSearchParams(location.search).get("bench")]
+  const vrij = new URLSearchParams(location.search).has("vrij") || !!benchSpot
   const container = document.getElementById("game")
   const playerId = container.dataset.playerId
   // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
@@ -159,6 +163,11 @@ async function main() {
     boostEl.classList.add("pop"); setTimeout(() => boostEl.classList.remove("pop"), 200)
   }
   const signEl = el("sign"), streetEl = el("sign-street"), placeEl = el("sign-place"), biomeEl = el("biome")
+  const benchParams = new URLSearchParams(location.search)
+  const bench = benchSpot ? new Bench(world, benchSpot, () => placed && chunks.readyFraction(car.x, car.z) >= 1 && !scatter.queue.length,
+    { frames: Number(benchParams.get("frames")) || undefined, extra: Number(benchParams.get("extra")) || undefined }) : null
+  if (bench) { config.spawn = { x: benchSpot.x, z: benchSpot.z, yaw: benchSpot.yaw }; car.reset(config.spawn); dayNight.fixedHours ??= 13; picker.hide() }
+  window.slop.bench = bench
   const timer = new THREE.Timer()
   let netTimer = 0, signTimer = 0, borderTimer = 0
   const heightAt = (x, z) => chunks.heightAt(x, z), tileIndex = (x, z) => chunks.tileIndex(x, z)
@@ -269,6 +278,7 @@ async function main() {
     playersEl.textContent = remotes.count ? `${remotes.count} andere ${remotes.count === 1 ? "chauffeur" : "chauffeurs"} online` : ""
 
     world.render()
+    bench?.frame(dt)
     requestAnimationFrame(frame)
   }
   frame(performance.now())

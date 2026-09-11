@@ -292,6 +292,18 @@ picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
 the clock.
 
+**Bench** (`?bench=bos|dorp|veld`, `game/Bench.js`) parks the car at a fixed spot in free roam, waits for the tiles,
+watches two seconds of ordinary frames and then measures 300 renders, reading a pixel back each time so the GPU is
+actually waited for. `slop.bench.result` holds the frame and render percentiles plus the draw calls, triangles,
+programs and texture counts; `?frames=` and `?extra=` shorten it. Take the milliseconds in a real browser —
+`script/browse.rb` runs a software rasteriser, where only the counts mean anything. Baseline counts there:
+
+| spot | draw calls | triangles | programs | textures |
+|---|---|---|---|---|
+| `veld` open farmland | 254 | 1.89 M | 15 | 55 |
+| `dorp` densest village tile | 639 | 2.89 M | 17 | 165 |
+| `bos` conifer wood | 201 | 5.06 M | 13 | 17 |
+
 **Vrij rijden** (`?vrij`, or the link in the vehicle picker) turns the round off: no server connection, so no
 loading screen, no vote, no teleport to another town every quarter of an hour and no world reset. A map click
 teleports straight away with no cooldown, any vehicle can be picked at any time, `,` and `.` wind the clock an hour,
