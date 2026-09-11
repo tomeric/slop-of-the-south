@@ -7,6 +7,7 @@ import { buildTrees } from "game/Trees"
 import { buildLamps, buildSignals } from "game/Furniture"
 import { buildSigns } from "game/Signs"
 import { paintCover, buildWater } from "game/Cover"
+import { noOutlineInstanced } from "game/Outline"
 import { ROAD_LIFT } from "game/Roads"
 
 // Streams 500 m tiles in a square around the player and disposes the ones left behind. Tile JSON is fetched in the
@@ -130,6 +131,7 @@ export class ChunkManager {
         const ground = (x, z) => roadHeight(roadIndex, x, z, terrain)
         for (const part of [buildLamps(data.furniture.lamps, ground, reg), buildSignals(data.furniture.signals, ground, reg), buildSigns(data.furniture.signs, ground, reg)]) if (part) group.add(part)
       }
+      noOutlineInstanced(group)                                   // trees, grass, lamps, signs, pads: outlines ignore instanceMatrix
       this.scene.add(group)
       const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [], coverSub: data.cover_sub ?? [] }
       this.tiles.set(key, tile)

@@ -1,5 +1,7 @@
 import * as THREE from "three"
 import { ChaseCamera } from "game/Camera"
+import { makeOutline } from "game/Outline"
+import { TUNING as T } from "game/Tuning"
 
 // Renderer, camera, light and atmosphere. Nothing game-specific lives here.
 export class World {
@@ -22,6 +24,8 @@ export class World {
     this.sun.position.set(-300, 500, -200)           // afternoon sun from the south-west; DayNight moves it
     this.scene.add(this.hemi, this.sun)
 
+    this.outline = makeOutline(this.renderer)          // the second, inverted-hull pass (game/Outline.js)
+    this.renderer.info.autoReset = false               // two passes a frame: reset once, so info counts both
     this.chase = new ChaseCamera(this.camera)
     addEventListener("resize", () => this.resize())
   }
@@ -39,5 +43,8 @@ export class World {
   followCamera(car, dt) { dt >= 10 ? this.chase.snap(car) : this.chase.update(car, dt) }
   snapCamera(car) { this.chase.snap(car) }
 
-  render() { this.renderer.render(this.scene, this.camera) }
+  render() {
+    this.renderer.info.reset()
+    T.light.outline.on ? this.outline.render(this.scene, this.camera) : this.renderer.render(this.scene, this.camera)
+  }
 }

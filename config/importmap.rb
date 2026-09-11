@@ -15,3 +15,4 @@ pin "@rails/actioncable", to: "actioncable.esm.js"
 
 pin "three" # @0.186.0
 pin "three/addons/utils/BufferGeometryUtils.js", to: "three--addons--utils--BufferGeometryUtils.js" # @0.186.0
+pin "three/addons/effects/OutlineEffect.js", to: "three--addons--effects--OutlineEffect.js" # @0.186.0

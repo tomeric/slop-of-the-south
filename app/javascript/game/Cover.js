@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { TUNING as T, mulberry32 } from "game/Tuning"
+import { noOutline } from "game/Outline"
 
 // BGT land cover per tile: painted into a canvas texture that the terrain tile wears, plus water surfaces. Every
 // polygon gets its class colour and, when big enough, a detail pattern clipped to it (mottling, crop rows, forest
@@ -189,7 +190,7 @@ function groundShader(shader) {
 export function groundMaterial(texture) {
   const m = new THREE.MeshStandardMaterial({ map: texture, roughness: 1 })
   m.onBeforeCompile = groundShader
-  return m
+  return noOutline(m)
 }
 
 // once per frame: the live knobs into the shared uniforms
@@ -204,7 +205,7 @@ const LIFT = 0.12, MAX_EDGE = 40
 // The water surface: rippling normals from a few sine waves, the sky reflected by Fresnel (horizon ↔ zenith from
 // DayNight), the sun's glitter, and transparency so the carved bed shows through. One shared material; updateWater()
 // feeds it the time and the sky every frame.
-const waterMat = new THREE.ShaderMaterial({
+const waterMat = noOutline(new THREE.ShaderMaterial({
   uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
     time: { value: 0 }, daylight: { value: 1 }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color(0xfff2dc) },
     zenith: { value: new THREE.Color(0x4f8fd2) }, horizon: { value: new THREE.Color(0xbfd4e6) }, deep: { value: new THREE.Color(0x14333d) }, shallow: { value: new THREE.Color(0x2f6f78) }
@@ -247,7 +248,7 @@ const waterMat = new THREE.ShaderMaterial({
       #include <fog_fragment>
     }`,
   transparent: true, fog: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2
-})
+}))
 waterMat.__shared = true
 
 // darkness / sky / sun from DayNight.env, once per frame

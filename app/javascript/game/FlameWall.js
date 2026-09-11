@@ -1,10 +1,11 @@
 import * as THREE from "three"
+import { noOutline } from "game/Outline"
 
 // The edge of the world: a tall curtain of animated fire along the province border, and a burn-back for cars
 // that cross it. Rings come from /api/world as flat game coordinates [x, z, x, z, …].
 const HEIGHT = 420, BOTTOM = -40, SEGMENT = 40
 
-const material = new THREE.ShaderMaterial({
+const material = noOutline(new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, side: THREE.DoubleSide,     // normal blending: stays orange against a bright sky
   uniforms: { time: { value: 0 } },
   vertexShader: /* glsl */`
@@ -30,7 +31,7 @@ const material = new THREE.ShaderMaterial({
       float alpha = clamp(flame * 1.4 * (1.0 - 0.55 * vUv.y) + 0.25 * (1.0 - vUv.y), 0.0, 0.97);
       gl_FragColor = vec4(color, alpha);
     }`
-})
+}))
 material.__shared = true
 
 const CHUNK = 64                                                     // quads per mesh (~2.5 km of wall), so the province-long curtain is frustum-culled in pieces

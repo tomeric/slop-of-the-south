@@ -73,6 +73,7 @@ export const TUNING = {
     hemi: 0.45, sun: 1.35,                    // the sky light and the sun, now that the environment map carries the ambient (live)
     env: { on: true, size: 64, sigma: 0.08, intensity: [0.3, 0.85], glare: 6,   // the baked sky (game/Environment.js)
            step: 0.02, minInterval: 0.25, maxInterval: 2, skipMs: 24 },         // re-bake this far apart, never on a slow frame
+    outline: { on: true, thickness: 0.003, color: [0.12, 0.08, 0.1], alpha: 0.85 },   // cartoon edges on buildings and cars (on: live)
   },
   ground: {
     detail: { repeat: 125, strength: 0.45, fadeNear: 120, fadeFar: 300 },   // terrain grain: 125 repeats over 500 m = 4 m, fading out with distance (live)

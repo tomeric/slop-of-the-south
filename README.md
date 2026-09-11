@@ -292,6 +292,13 @@ picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
 the clock.
 
+**Outlines** (`game/Outline.js`): three's `OutlineEffect` draws an inverted hull around buildings, cars, the float
+and the rubble. It is a second pass, so everything else opts out — the ground, roads, water, the sky and the sign
+faces by hand where their material is made, and every instanced mesh (trees, grass, lamp posts, pads) as its tile is
+built, because the addon offsets the hull with the model-view matrix alone and would place an instance's outline
+wrongly. In the densest village that costs +80 draw calls and +0.27 M triangles on 578 / 2.36 M. `slop.tuning.light.outline.on`
+turns it off live.
+
 **Bench** (`?bench=bos|dorp|veld`, `game/Bench.js`) parks the car at a fixed spot in free roam, waits for the tiles,
 watches two seconds of ordinary frames and then measures 300 renders, reading a pixel back each time so the GPU is
 actually waited for. `slop.bench.result` holds the frame and render percentiles plus the draw calls, triangles,

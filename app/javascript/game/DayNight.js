@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { TUNING as T } from "game/Tuning"
+import { noOutline } from "game/Outline"
 
 // A full day every 6 minutes, on the wall clock so every player shares the same time of day. Sunrise at 04:30,
 // solar noon at 13:00, sunset at 21:30 game time. The sun light swings east → south → west and fades out; the sky,
@@ -36,11 +37,11 @@ export class DayNight {
     this.sunSprite.renderOrder = this.moonSprite.renderOrder = -1
     world.scene.add(this.sunSprite, this.moonSprite)
     // the sky: a dome around the camera shaded from horizon to zenith, with the dusk glow and the stars
-    this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_DISTANCE * 1.1, 32, 16), new THREE.ShaderMaterial({
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_DISTANCE * 1.1, 32, 16), noOutline(new THREE.ShaderMaterial({
       uniforms: { zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, glow: { value: DUSK_GLOW.clone() },
                   sunDir: { value: new THREE.Vector3(1, 0, 0) }, glowStrength: { value: 0 }, stars: { value: 0 } },
       vertexShader: SKY_VERTEX, fragmentShader: SKY_FRAGMENT, side: THREE.BackSide, depthWrite: false, fog: false
-    }))
+    })))
     this.sky.renderOrder = -10
     this.sky.frustumCulled = false
     world.scene.add(this.sky)

@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { TUNING as T, hash32, mulberry32 } from "game/Tuning"
 import { nearRoad } from "game/ChunkManager"
+import { noOutline } from "game/Outline"
 
 // What grows on the ground, in two layers. Bushes and the reeds along the water are placed per tile when the tile
 // arrives: they read from far away and there are few of them. The grass itself is a carpet of crossed-quad tufts in
@@ -162,14 +163,14 @@ function tuftMaterial(carpet) {
   const m = new THREE.MeshStandardMaterial({ map: tuftAtlas(), alphaTest: 0.35, alphaToCoverage: true, side: THREE.DoubleSide, vertexColors: true, roughness: 1 })
   m.onBeforeCompile = carpet ? (shader) => { patchTuft(shader, true); m.userData.shader = shader } : (shader) => { patchTuft(shader, false); m.userData.shader = shader }
   m.__shared = true
-  return m
+  return noOutline(m)
 }
 let reedMat = null
 const reedMaterial = () => reedMat ??= tuftMaterial(false)
 
 // ---- bushes: a few squashed blobs each, flat shaded ---------------------------------------------------------------
 
-const bushMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 })
+const bushMat = noOutline(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }))
 bushMat.__shared = true
 const bushGeometries = [0, 1, 2, 3].map((v) => bushVariant(400 + 13 * v, v === 3))
 

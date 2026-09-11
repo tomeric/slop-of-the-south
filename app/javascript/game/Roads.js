@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { noOutline } from "game/Outline"
 
 // Procedural roads. Tile entries carry ready-made 3D centrelines (RoadBuilder: smoothed, junction-pinned, seated in
 // the terrain) as pts [x, z, y] where y IS the road surface level; the terrain bed under a road is at that level and
@@ -52,9 +53,9 @@ function texture(name) {
 
 const materials = {}
 function material(name) {
-  return materials[name] ??= Object.assign(new THREE.MeshStandardMaterial({ map: texture(name), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1 }), { __shared: true })
+  return materials[name] ??= noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture(name), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1 }), { __shared: true }))
 }
-const junctionMat = Object.assign(new THREE.MeshStandardMaterial({ map: texture("asphalt"), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -3 }), { __shared: true })
+const junctionMat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture("asphalt"), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -3 }), { __shared: true }))
 const concrete = Object.assign(new THREE.MeshStandardMaterial({ color: 0x9a9892, roughness: 0.9 }), { __shared: true })
 
 // which texture for a road: class, width, surface and whether the tile is built-up decide

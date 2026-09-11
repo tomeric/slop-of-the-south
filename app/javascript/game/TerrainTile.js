@@ -1,7 +1,8 @@
 import * as THREE from "three"
 import { groundMaterial } from "game/Cover"
+import { noOutline } from "game/Outline"
 
-const plain = new THREE.MeshStandardMaterial({ color: 0x7fa15a, roughness: 1 })   // tiles without land cover
+const plain = noOutline(new THREE.MeshStandardMaterial({ color: 0x7fa15a, roughness: 1 }))   // tiles without land cover
 plain.__shared = true
 
 // Heightmap (rows north→south, columns west→east) → displaced plane, plus sampling that agrees with the mesh.

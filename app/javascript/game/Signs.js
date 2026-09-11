@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { pointKey, collapseRange } from "game/Destructibles"
+import { noOutline } from "game/Outline"
 
 // NDW traffic signs drawn from the RVV sign catalogue. Every sign face is painted procedurally on a canvas from its RVV
 // code (A1 speed limit, B6 yield, G11 cycle path …) plus the value on it (black code) or its text, cached per look.
@@ -79,7 +80,9 @@ function material(look) {
   if (materials.has(look.key)) return materials.get(look.key)
   const tex = new THREE.CanvasTexture(look.canvas)
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4
-  const mat = Object.assign(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 }), { __shared: true })   // opaque canvases: keep them out of the sorted transparent pass
+  // one material per sign face, so hundreds of them; an outline around each would double that many draw calls for
+  // a flat quad usually seen edge-on. The poles keep theirs.
+  const mat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 }), { __shared: true }))   // opaque canvases: keep them out of the sorted transparent pass
   materials.set(look.key, mat)
   return mat
 }
