@@ -12,6 +12,7 @@ class TileBuilder
     meshes = meshes_for(tx, ty)
     network = RoadBuilder.new(@heights).build(tx, ty)   # smoothed, pinned road profiles + terrain deformation
     water = water_beds(tx, ty, x0, y0 + s)              # surface levels and carved beds of the bigger water bodies
+    cover, cover_sub = cover_for(tx, ty, x0, y0 + s, water[:levels])
     {
       tx: tx, ty: ty,
       origin: World.to_game(x0, y0 + s),      # game-space corner (west, north)
@@ -22,7 +23,8 @@ class TileBuilder
       meshes: meshes,
       trees: trees_for(tx, ty),
       furniture: FurnitureBuilder.new.build(tx, ty),
-      cover: cover_for(tx, ty, x0, y0 + s, water[:levels]),
+      cover: cover,
+      cover_sub: cover_sub,
       biome: LandCover.biome(LandCover.shares_in_tile(tx, ty))
     }
   end
@@ -126,15 +128,20 @@ class TileBuilder
   # Land cover polygons clipped to the tile: [code, outer_ring, hole_ring, ...] with rings as flat decimetre
   # offsets [dx, dz, ...] from the tile origin (west, north), so 0..5000 across the tile. Painted onto the terrain.
   # Water entries carry their surface level (metres NAP, or null for water draped on the terrain) before the rings:
-  # [30, level, outer_ring, hole_ring, ...].
+  # [30, level, outer_ring, hole_ring, ...]. Returns `cover_sub` alongside it: one BGT sub-kind code per entry
+  # (LandCover::DETAILS, 0 where the source records none), which the client uses to pick a finer pattern.
   def cover_for(tx, ty, x0, y1, levels = {})
-    LandCover.in_tile(tx, ty).flat_map do |code, polys, water|
-      polys.filter_map do |rings|
+    cover, sub = [], []
+    entries = LandCover.in_tile(tx, ty) + RoadSurface.verges_in_tile(tx, ty)
+    entries.sort_by { |code, _| [ LandCover::ORDER.call(code), code ] }.each do |code, polys, water, detail|
+      polys.each do |rings|
         rings = rings.map { |ring| ring_dm(ring, x0, y1) }.reject { _1.size < 6 }
         next if rings.empty?
-        water ? [ code, levels[water[:id]]&.round(2), *rings ] : [ code, *rings ]
+        cover << (water ? [ code, levels[water[:id]]&.round(2), *rings ] : [ code, *rings ])
+        sub << detail.to_i
       end
     end
+    [ cover, sub ]
   end
 
   # The AHN height inside water is the water surface, so lakes, rivers and canals get a bed carved below it:

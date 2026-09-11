@@ -112,7 +112,7 @@ export class ChunkManager {
   build(tx, ty, key, data) {
     try {
       const objects = new Map(), reg = (key, handle) => objects.set(key, handle)
-      const terrain = new TerrainTile(data, this.cfg, data.cover?.length ? paintCover(data.cover) : null)
+      const terrain = new TerrainTile(data, this.cfg, data.cover?.length ? paintCover(data.cover, data.cover_sub ?? []) : null)
       const group = new THREE.Group()
       group.add(terrain.mesh)
       const water = buildWater(data.cover ?? [], (x, z) => terrain.heightAt(x, z), data.origin)
@@ -131,7 +131,7 @@ export class ChunkManager {
         for (const part of [buildLamps(data.furniture.lamps, ground, reg), buildSignals(data.furniture.signals, ground, reg), buildSigns(data.furniture.signs, ground, reg)]) if (part) group.add(part)
       }
       this.scene.add(group)
-      const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [] }
+      const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [], coverSub: data.cover_sub ?? [] }
       this.tiles.set(key, tile)
       this.hooks.onTile?.(tile)
     } catch (e) {

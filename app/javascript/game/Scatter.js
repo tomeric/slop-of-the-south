@@ -8,7 +8,8 @@ import { nearRoad } from "game/ChunkManager"
 // notice, so the tufts live where the player is looking and fade out at the rim. Both layers are pure functions of
 // position (the cell or the tile key seeds the RNG, the grid runs in a fixed order), so every player sees the same
 // ground. Bushes squash on this screen when a grounded car drives through one; nothing is told to the server.
-const ID_N = 256, BLOCKED = 31                         // the class raster: one cell per ~2 m, 31 marks a building footprint
+const ID_N = 512, BLOCKED = 31                         // the class raster: one cell per metre, 31 marks a building footprint
+const SHRUB_BED = new Set([ 2, 4 ])                     // heesters and bosplantsoen: urban green that is really a bush bed
 const URBAN = new Set(["stad", "woonwijk", "dorp"])
 const CELL_PX = 128, ATLAS_W = 512, ATLAS_H = 256, MARGIN = 4
 const KINDS = ["grass", "dry", "flower", "heather", "reed", "dune", "fern"]
@@ -201,12 +202,15 @@ function rasterIds(tile) {
   c.width = c.height = ID_N
   const ctx = c.getContext("2d", { willReadFrequently: true })
   const k = ID_N / 5000
-  for (const entry of tile.cover) {
+  for (let e = 0; e < tile.cover.length; e++) {
+    const entry = tile.cover[e], sub = tile.coverSub[e] ?? 0
+    const code = entry[0] === 3 && SHRUB_BED.has(sub) ? 9 : entry[0]
     const start = entry[0] === 30 && !Array.isArray(entry[1]) ? 2 : 1
-    ctx.fillStyle = `rgb(${entry[0] * 8},0,0)`
+    ctx.fillStyle = ctx.strokeStyle = `rgb(${code * 8},0,0)`
     ctx.beginPath()
     for (let r = start; r < entry.length; r++) { const ring = entry[r]; ctx.moveTo(ring[0] * k, ring[1] * k); for (let i = 2; i < ring.length; i += 2) ctx.lineTo(ring[i] * k, ring[i + 1] * k); ctx.closePath() }
     ctx.fill("evenodd")
+    if (code === 19 || code === 25) { ctx.lineWidth = 1.6; ctx.stroke() }     // hedges and verges are a metre wide: without this they are all edge and nothing survives
   }
   const m = ID_N / tile.terrain.size, { ox, oz } = tile.terrain          // building footprints (game metres) block everything
   ctx.setTransform(m, 0, 0, m, -ox * m, -oz * m)
@@ -223,23 +227,37 @@ function codeAt(entry, x, z) {
   return u < 0 || v < 0 || u >= ID_N || v >= ID_N ? 0 : entry.ids[v * ID_N + u]
 }
 
-const margin = (tile) => URBAN.has(tile.biome) ? T.ground.urbanMargin : T.ground.roadMargin
+const margin = (cls, tile) => cls.margin ?? (URBAN.has(tile.biome) ? T.ground.urbanMargin : T.ground.roadMargin)
 
 // ---- per tile: bushes, and reeds along the water ------------------------------------------------------------------
 
 function placeBushes(tile, ids, P = T.ground) {
   const rnd = mulberry32(hash32(`${tile.key}|struik`)), { ox, oz, size } = tile.terrain, entry = { tile, ids }
-  const bushes = []
+  const texel = size / ID_N, bushes = [], hedges = []
   for (const [codeStr, cls] of Object.entries(P.classes)) {
     if (!cls.bush) continue
-    const code = +codeStr, cell = Math.sqrt(cls.bush)
-    for (let z = oz + cell * rnd(); z < oz + size; z += cell) for (let x = ox + cell * rnd(); x < ox + size; x += cell) {
-      const px = x + (rnd() - 0.5) * cell * 0.9, pz = z + (rnd() - 0.5) * cell * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd(), r4 = rnd()
-      if (codeAt(entry, px, pz) !== code || nearRoad(tile.roadIndex, px, pz, margin(tile))) continue
-      bushes.push({ x: px, z: pz, v: Math.floor(r1 * 4), r: 0.6 + 0.5 * r2, spin: r3 * Math.PI * 2, tint: 0.85 + 0.3 * r4, gorse: !!cls.gorse })
+    const code = +codeStr
+    const take = (px, pz, r1, r2, r3, r4) => {
+      if (nearRoad(tile.roadIndex, px, pz, margin(cls, tile))) return
+      ;(cls.hedge ? hedges : bushes).push({ x: px, z: pz, v: cls.hedge ? 1 + Math.floor(r1 * 2) : Math.floor(r1 * 4), r: (cls.hedge ? 0.5 : 0.6) + (cls.hedge ? 0.25 : 0.5) * r2,
+                    tall: cls.hedge ? 1.4 : 0.9, spin: r3 * Math.PI * 2, tint: cls.hedge ? 0.8 + 0.1 * r4 : 0.85 + 0.3 * r4, gorse: !!cls.gorse })
+    }
+    if (cls.bush < 4) {                                   // a hedge is a metre wide: walk the raster instead of the tile
+      for (let v = 0; v < ID_N; v++) for (let u = 0; u < ID_N; u++) {
+        if (ids[v * ID_N + u] !== code) continue
+        const r0 = rnd(), r1 = rnd(), r2 = rnd(), r3 = rnd(), r4 = rnd(), r5 = rnd()
+        if (r0 * cls.bush > texel * texel) continue
+        take(ox + (u + r5) * texel, oz + (v + r1) * texel, r2, r3, r4, r0)
+      }
+    } else {
+      const cell = Math.sqrt(cls.bush)
+      for (let z = oz + cell * rnd(); z < oz + size; z += cell) for (let x = ox + cell * rnd(); x < ox + size; x += cell) {
+        const px = x + (rnd() - 0.5) * cell * 0.9, pz = z + (rnd() - 0.5) * cell * 0.9, r1 = rnd(), r2 = rnd(), r3 = rnd(), r4 = rnd()
+        if (codeAt(entry, px, pz) === code) take(px, pz, r1, r2, r3, r4)
+      }
     }
   }
-  return thin(bushes, P.bushCap)
+  return thin(bushes, P.bushCap).concat(thin(hedges, P.hedgeCap))   // a hedge row must not eat the tile's other bushes
 }
 
 function placeReeds(tile, ids, P = T.ground) {
@@ -317,9 +335,9 @@ export class Scatter {
       const mesh = new THREE.InstancedMesh(bushGeometries[v], bushMat, list.length)
       list.forEach((b, i) => {
         b.y = this.world.heightAt(b.x, b.z) - 0.05
-        mesh.setMatrixAt(i, _m.compose(_p.set(b.x, b.y, b.z), _q.setFromAxisAngle(_up, b.spin), _s.set(b.r, b.r * 0.9, b.r)))
+        mesh.setMatrixAt(i, _m.compose(_p.set(b.x, b.y, b.z), _q.setFromAxisAngle(_up, b.spin), _s.set(b.r, b.r * b.tall, b.r)))
         mesh.setColorAt(i, b.gorse ? _c.setRGB(0.95 * b.tint, b.tint, 0.55 * b.tint) : _c.setScalar(b.tint))
-        kept.push({ x: b.x, y: b.y, z: b.z, r: b.r, spin: b.spin, mesh, i, flat: false })
+        kept.push({ x: b.x, y: b.y, z: b.z, r: b.r, tall: b.tall, spin: b.spin, mesh, i, flat: false })
       })
       mesh.instanceMatrix.needsUpdate = mesh.instanceColor.needsUpdate = true
       mesh.computeBoundingSphere()
@@ -383,7 +401,7 @@ export class Scatter {
       const [tx, ty] = this.world.tileIndex(x, z), entry = this.tiles.get(`${tx}_${ty}`)
       if (!entry) continue
       const cls = T.ground.classes[codeAt(entry, x, z)]
-      if (!cls?.dens || r1 * cls.dens > area || nearRoad(entry.tile.roadIndex, x, z, margin(entry.tile))) continue
+      if (!cls?.dens || r1 * cls.dens > area || nearRoad(entry.tile.roadIndex, x, z, margin(cls, entry.tile))) continue
       const kind = cls.mix[Math.floor(r2 * cls.mix.length)], [h0, h1] = HEIGHT[kind], w = 0.75 + 0.5 * r3
       const slot = base + n++
       mesh.setMatrixAt(slot, _m.compose(_p.set(x, this.world.heightAt(x, z) - 0.05, z), _q.setFromAxisAngle(_up, r4 * Math.PI), _s.set(w, h0 + (h1 - h0) * r3, w)))

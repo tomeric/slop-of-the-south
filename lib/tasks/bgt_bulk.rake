@@ -99,8 +99,8 @@ namespace :bgt do
     raise "no extracts in #{BULK_DIR}; run bin/rails bgt:bulk_fetch" if zips.empty?
 
     layers = {
-      "bgt_begroeidterreindeel" => [ "BegroeidTerreindeel", %(SELECT gml_id, "bgt-fysiekVoorkomen" AS kind, eindRegistratie, objectEindTijd FROM BegroeidTerreindeel), %w[-nlt PROMOTE_TO_MULTI -nlt CONVERT_TO_LINEAR] ],
-      "bgt_onbegroeidterreindeel" => [ "OnbegroeidTerreindeel", %(SELECT gml_id, "bgt-fysiekVoorkomen" AS kind, eindRegistratie, objectEindTijd FROM OnbegroeidTerreindeel), %w[-nlt PROMOTE_TO_MULTI -nlt CONVERT_TO_LINEAR] ],
+      "bgt_begroeidterreindeel" => [ "BegroeidTerreindeel", %(SELECT gml_id, "bgt-fysiekVoorkomen" AS kind, "plus-fysiekVoorkomen" AS detail, eindRegistratie, objectEindTijd FROM BegroeidTerreindeel), %w[-nlt PROMOTE_TO_MULTI -nlt CONVERT_TO_LINEAR] ],
+      "bgt_onbegroeidterreindeel" => [ "OnbegroeidTerreindeel", %(SELECT gml_id, "bgt-fysiekVoorkomen" AS kind, "plus-fysiekVoorkomen" AS detail, eindRegistratie, objectEindTijd FROM OnbegroeidTerreindeel), %w[-nlt PROMOTE_TO_MULTI -nlt CONVERT_TO_LINEAR] ],
       # (OGR SQL has no COALESCE: water keeps both type columns, merged in PostgreSQL below)
       "bgt_waterdeel" => [ "Waterdeel", %(SELECT gml_id, "plus-type" AS plus_type, "bgt-type" AS bgt_type, eindRegistratie, objectEindTijd FROM Waterdeel), %w[-nlt PROMOTE_TO_MULTI -nlt CONVERT_TO_LINEAR] ],
       "bgt_vegetatieobject" => [ "VegetatieObject", %(SELECT gml_id, "plus-type" AS kind, eindRegistratie, objectEindTijd FROM VegetatieObject), %w[-nlt CONVERT_TO_LINEAR] ]
@@ -122,20 +122,32 @@ namespace :bgt do
 
     conn.transaction do
       conn.execute("DELETE FROM land_covers")
-      conn.execute("DELETE FROM trees WHERE source IN ('bgt', 'bgt_bos', 'bgt_boomgaard')")
+      conn.execute("DELETE FROM trees WHERE source = 'bgt'")
       current = "eindregistratie IS NULL AND objecteindtijd IS NULL"
-      { "bulk_bgt_begroeidterreindeel" => [ "begroeid", "kind" ], "bulk_bgt_onbegroeidterreindeel" => [ "onbegroeid", "kind" ],
-        "bulk_bgt_waterdeel" => [ "water", "COALESCE(plus_type, bgt_type)" ] }.each do |table, (layer, kind)|
+      { "bulk_bgt_begroeidterreindeel" => [ "begroeid", "kind", "detail" ], "bulk_bgt_onbegroeidterreindeel" => [ "onbegroeid", "kind", "detail" ],
+        "bulk_bgt_waterdeel" => [ "water", "COALESCE(plus_type, bgt_type)", "NULL" ] }.each do |table, (layer, kind, detail)|
         n = conn.exec_update(<<~SQL)
-          INSERT INTO land_covers (source_id, layer, kind, geom, created_at, updated_at)
-          SELECT DISTINCT ON (gml_id) gml_id, '#{layer}', #{kind}, ST_Multi(ST_CollectionExtract(ST_MakeValid(geom), 3)), now(), now()
+          INSERT INTO land_covers (source_id, layer, kind, detail, geom, created_at, updated_at)
+          SELECT DISTINCT ON (gml_id) gml_id, '#{layer}', #{kind}, #{detail}, ST_Multi(ST_CollectionExtract(ST_MakeValid(geom), 3)), now(), now()
           FROM #{table}
           WHERE #{current} AND #{kind} IS NOT NULL AND #{kind} NOT LIKE 'greppel%' AND NOT ST_IsEmpty(geom)
           ORDER BY gml_id
-          ON CONFLICT (source_id) DO UPDATE SET layer = EXCLUDED.layer, kind = EXCLUDED.kind, geom = EXCLUDED.geom, updated_at = now()
+          ON CONFLICT (source_id) DO UPDATE SET layer = EXCLUDED.layer, kind = EXCLUDED.kind, detail = EXCLUDED.detail, geom = EXCLUDED.geom, updated_at = now()
         SQL
         puts "#{layer}: #{n} polygons"
       end
+      # hedges are vegetation objects, not terrain: the lines among them become a one metre strip
+      hedges = conn.exec_update(<<~SQL)
+        INSERT INTO land_covers (source_id, layer, kind, geom, created_at, updated_at)
+        SELECT DISTINCT ON (gml_id) gml_id, 'begroeid', 'haag',
+               ST_Multi(ST_CollectionExtract(ST_MakeValid(
+                 CASE WHEN ST_Dimension(geom) = 1 THEN ST_Buffer(ST_Force2D(geom), 0.5, 'endcap=flat join=round') ELSE ST_Force2D(geom) END), 3)), now(), now()
+        FROM bulk_bgt_vegetatieobject
+        WHERE #{current} AND kind = 'haag' AND ST_Dimension(geom) >= 1 AND NOT ST_IsEmpty(geom)
+        ORDER BY gml_id
+        ON CONFLICT (source_id) DO UPDATE SET layer = EXCLUDED.layer, kind = EXCLUDED.kind, geom = EXCLUDED.geom, updated_at = now()
+      SQL
+      puts "hedges: #{hedges} strips"
       trees = conn.exec_update(<<~SQL)
         INSERT INTO trees (source, source_id, kind, height, geom, created_at, updated_at)
         SELECT DISTINCT ON (gml_id) 'bgt', gml_id, 'boom', 6 + (('x' || substr(md5(gml_id), 1, 6))::bit(24)::int % 700) / 100.0, ST_Force2D(geom), now(), now()
@@ -144,8 +156,20 @@ namespace :bgt do
         ORDER BY gml_id
         ON CONFLICT (source, source_id) DO UPDATE SET height = EXCLUDED.height, geom = EXCLUDED.geom, updated_at = now()
       SQL
+      puts "trees: #{trees} registered"
+      conn.execute("DROP TABLE " + layers.keys.map { "bulk_#{_1}" }.join(", "))
+    end
+    BGT_FILL.call(conn, %w[woods orchards]) unless ENV["SKIP_TREE_FILL"]
+    puts "land_covers: #{LandCover.group(:layer).count.inspect}; trees: #{Tree.count}"
+  end
+
+  # Scatter trees through the woodland and orchard polygons. Split out of the import: it writes eight million rows
+  # and only has to run when the land cover itself changed.
+  BGT_FILL = lambda do |conn, only|
+    if only.include?("woods")
       woods = BGT_WOODS.map { |k, w| "(#{conn.quote(k)}, #{w[:area]}, #{w[:height].min}, #{w[:height].max})" }.join(",")
-      scattered = conn.exec_update(<<~SQL)
+      conn.execute("DELETE FROM trees WHERE source = 'bgt_bos'")
+      n = conn.exec_update(<<~SQL)
         INSERT INTO trees (source, source_id, kind, height, geom, created_at, updated_at)
         SELECT 'bgt_bos', lc.source_id || '/' || d.path[1], lc.kind, w.hmin + (w.hmax - w.hmin) * random(), d.geom, now(), now()
         FROM land_covers lc
@@ -154,17 +178,25 @@ namespace :bgt do
         WHERE lc.layer = 'begroeid'
         ON CONFLICT (source, source_id) DO UPDATE SET geom = EXCLUDED.geom, updated_at = now()
       SQL
-      fruit = conn.exec_update(<<~SQL)
+      puts "trees in woods: #{n}"
+    end
+    if only.include?("orchards")
+      conn.execute("DELETE FROM trees WHERE source = 'bgt_boomgaard'")
+      n = conn.exec_update(<<~SQL)
         INSERT INTO trees (source, source_id, kind, height, geom, created_at, updated_at)
         SELECT 'bgt_boomgaard', lc.source_id || '/' || row_number() OVER (PARTITION BY lc.source_id ORDER BY ST_X(p), ST_Y(p)), 'fruitteelt', 4.5 + 2 * random(), p, now(), now()
         FROM land_covers lc, LATERAL (SELECT ST_Centroid(c.geom) AS p FROM ST_SquareGrid(9, lc.geom) AS c WHERE ST_Within(ST_Centroid(c.geom), lc.geom)) g
         WHERE lc.layer = 'begroeid' AND lc.kind = 'fruitteelt'
         ON CONFLICT (source, source_id) DO UPDATE SET geom = EXCLUDED.geom, updated_at = now()
       SQL
-      puts "trees: #{trees} registered, #{scattered} in woods, #{fruit} in orchards"
-      conn.execute("DROP TABLE " + layers.keys.map { "bulk_#{_1}" }.join(", "))
+      puts "trees in orchards: #{n}"
     end
-    puts "land_covers: #{LandCover.group(:layer).count.inspect}; trees: #{Tree.count}"
+  end
+
+  desc "Scatter trees into the BGT woods and orchards already in land_covers (ONLY=woods,orchards)"
+  task tree_fill: :environment do
+    BGT_FILL.call(ActiveRecord::Base.connection, ENV.fetch("ONLY", "woods,orchards").split(","))
+    puts "trees: #{Tree.count}"
   end
 end
 

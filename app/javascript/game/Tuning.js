@@ -74,7 +74,7 @@ export const TUNING = {
     sway: { amp: 0.18, speed: 1.7 },                                        // grass in the wind (live)
     wake: { radius: 2.6, push: 0.55 },                                      // grass bends away from the car and springs back (live)
     near: { cell: 10, radius: 6, perCell: 80, perFrame: 12, fadeStart: 46, fadeEnd: 58 },   // the grass carpet around the car: cells of this size, this many out, at most this many tufts each
-    bushCap: 700,                                                           // bushes per tile
+    bushCap: 700, hedgeCap: 800,                                            // per tile, counted apart
     roadMargin: 0.8, urbanMargin: 2.5,                                      // keep off the roads (and the sidewalks in built-up tiles)
     reeds: { spacing: 4, offsetMin: 0.5, offsetMax: 1.5 },                  // along water edges, pushed onto the land
     flatten: { pad: 0.9, squashY: 0.25, squashXZ: 1.3, puffs: 3, puffColor: 0x6f9a44 },
@@ -88,10 +88,18 @@ export const TUNING = {
       7:  { dens: 3.5, mix: ["fern", "fern", "grass"], bush: 400 },          // bos
       8:  { dens: 1.6, mix: ["heather", "heather", "dry"], bush: 800, gorse: true },
       9:  { dens: 3, mix: ["grass"], bush: 25 },                             // struiken
-      10: { dens: 1.4, mix: ["reed", "reed", "grass"] },                     // moeras, rietland
-      11: { dens: 5, mix: ["dune"] },
+      10: { dens: 1.4, mix: ["reed", "reed", "grass"] },                     // rietland
+      11: { dens: 5, mix: ["dune"] },                                        // zand
+      13: { dens: 5, mix: ["fern", "grass"], bush: 500 },                    // naaldbos: darker floor, fewer ferns
+      14: { dens: 4, mix: ["fern", "grass"], bush: 450 },                    // gemengd bos
+      15: { dens: 3, mix: ["grass", "fern"], bush: 120 },                    // houtwal
+      16: { dens: 1.6, mix: ["reed", "grass"] },                             // moeras
+      17: { dens: 2.5, mix: ["grass", "dry"] },                              // kwelder
+      18: { dens: 4, mix: ["dune"] },                                        // duin
+      19: { bush: 2.2, hedge: true, margin: 0.3 },                           // haag: a dense row of dark bushes
       20: { bush: 900 },                                                     // erf: bushes in the yards, no grass
       24: { dens: 8, mix: ["dry"] },
+      25: { dens: 2, mix: ["grass", "grass", "flower", "dry"], margin: 0.3 },  // berm: right up to the road
     },
   },
 }

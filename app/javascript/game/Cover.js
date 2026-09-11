@@ -18,18 +18,43 @@ const COLORS = {
   4: ["#b69b63", "#c9b077", "#a48a58", "#9ea653", "#bfa76a", "#8d9b4c", "#d1b97d"],  // bouwland: soil, stubble, crops
   5: ["#7aa04a", "#74994a"],                                         // fruitteelt (orchard grass)
   6: ["#7f9d4f"],                                                    // boomteelt
-  7: ["#4f7a38", "#557f3c"],                                         // bos floor
+  7: ["#4f7a38", "#557f3c"],                                         // loofbos floor
   8: ["#8b7d5b"], 9: ["#6d8b45"], 10: ["#88915a"], 11: ["#d8c8a2"], 12: ["#9a9468"],
+  13: ["#3c5f34", "#426a38"], 14: ["#48723a", "#4e7a3e"], 15: ["#4d7c3c"],   // naaldbos, gemengd bos, houtwal
+  16: ["#7e8a52"], 17: ["#8d9660"], 18: ["#e0d2a8"],                 // moeras, kwelder, duin
+  19: ["#3d6b2c"],                                                   // haag (hedge)
   20: ["#b3a795", "#ada08d", "#b8ad9b"],                             // erf (yards)
   21: ["#5b5b5e"], 22: ["#8d7d72"], 23: ["#a89c86"], 24: ["#9d8b6c"],  // pavement grades
+  25: ["#84a353", "#7e9e4e"],                                        // berm (road verge)
   30: ["#25393c"]                                                    // water bed (seen through the surface)
 }
 const WATER = 30
 // which detail patterns each class gets, laid over the flat fill
 const DETAIL = { 1: ["mottle"], 2: ["mottle"], 3: ["mottle"], 4: ["rows"], 5: ["mottle", "mown"], 6: ["mown"], 7: ["mottle", "floor"],
-                 8: ["mottle", "heath"], 9: ["mottle"], 10: ["marsh"], 11: ["sand"], 20: ["mottle"], 21: ["asphalt"], 22: ["grid"], 23: ["asphalt"], 24: ["mottle"] }
+                 8: ["mottle", "heath"], 9: ["mottle", "shrub"], 10: ["marsh"], 11: ["sand"], 13: ["mottle", "floor"], 14: ["mottle", "floor"],
+                 15: ["mottle", "shrub"], 16: ["marsh"], 17: ["mottle"], 18: ["sand"], 19: ["shrub"], 20: ["mottle"], 21: ["asphalt"],
+                 22: ["grid"], 23: ["asphalt"], 24: ["mottle"], 25: ["mottle"] }
+// What BGT records about a polygon beyond its class (cover_sub, LandCover::DETAILS): a shade and a pattern that beat
+// the class default. Only part of the map carries one, so the defaults above have to look right on their own.
+const SUB = {
+  1:  { detail: ["mottle"] },                                        // gras- en kruidachtigen
+  2:  { shade: -0.10, detail: ["mottle", "shrub"] },                  // heesters
+  3:  { shade: -0.04, detail: ["mottle"] },                           // bodembedekkers, planten
+  4:  { shade: -0.16, detail: ["mottle", "shrub"] },                  // bosplantsoen
+  5:  { detail: ["rows"] },                                           // akkerbouw
+  6:  { detail: ["mottle", "mown"] }, 7: { detail: ["mown"] },        // hoogstam, laagstam boomgaard
+  8:  { detail: ["klinker"] }, 9: { detail: ["grid"] }, 10: { shade: -0.04, detail: ["asphalt"] },
+  11: { detail: ["gravel"] }, 12: { shade: 0.08, detail: ["sand"] }, 13: { detail: ["grasgrid"] }, 14: { shade: -0.08, detail: ["bark"] },
+}
 
-export function paintCover(cover) {
+// darken (< 0) or lighten (> 0) a hex colour
+function shade(hex, amount) {
+  if (!amount) return hex
+  const n = parseInt(hex.slice(1), 16), f = amount < 0 ? 1 + amount : 1 - amount, t = amount < 0 ? 0 : 255
+  return "#" + [16, 8, 0].map((sh) => Math.round(((n >> sh) & 255) * f + t * (1 - f)).toString(16).padStart(2, "0")).join("")
+}
+
+export function paintCover(cover, subs = []) {
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = TEXTURE_SIZE
   const ctx = canvas.getContext("2d")
@@ -37,12 +62,12 @@ export function paintCover(cover) {
   ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
   const k = TEXTURE_SIZE / 5000, P = T.ground.paint, pats = patternsFor(ctx), t0 = performance.now()
   let detailed = 0
-  for (const entry of cover) {
-    const code = entry[0], palette = COLORS[code]
+  for (let e = 0; e < cover.length; e++) {
+    const entry = cover[e], code = entry[0], palette = COLORS[code], over = SUB[subs[e]]
     if (!palette) continue
     const start = waterLevel(entry) === undefined ? 1 : 2          // water: [code, level, rings…]
     const h = hash(entry[start])
-    ctx.fillStyle = palette[h % palette.length]                    // stable per polygon: fields keep their colour
+    ctx.fillStyle = shade(palette[h % palette.length], over?.shade)   // stable per polygon: fields keep their colour
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity
     ctx.beginPath()
     for (let r = start; r < entry.length; r++) {
@@ -56,7 +81,7 @@ export function paintCover(cover) {
     }
     if (code === WATER) { ctx.lineWidth = 4; ctx.strokeStyle = "rgba(35,45,25,.45)"; ctx.stroke() }   // the fill covers the inner half: a wet band stays on the land
     ctx.fill("evenodd")
-    const names = DETAIL[code]
+    const names = over?.detail ?? DETAIL[code]
     if (names && detailed < P.maxPolys && bx1 - bx0 >= P.minPx && by1 - by0 >= P.minPx && performance.now() - t0 < P.budgetMs) {
       detailed++
       ctx.save()
@@ -91,6 +116,11 @@ function patternsFor(ctx) {
     sand:    tile((g, rnd, at) => { dots(g, rnd, at, 900, 1, 1, "rgba(255,250,235,.12)"); dots(g, rnd, at, 400, 1, 1, "rgba(120,100,70,.10)") }),
     grid:    tile((g) => { g.fillStyle = "rgba(0,0,0,.10)"; for (let i = 0; i < PATTERN; i += 4) { g.fillRect(0, i, PATTERN, 1); g.fillRect(i, 0, 1, PATTERN) } }),
     asphalt: tile((g, rnd, at) => { dots(g, rnd, at, 300, 1, 2, "rgba(255,255,255,.06)"); dots(g, rnd, at, 300, 1, 2, "rgba(0,0,0,.06)") }),
+    shrub:   tile((g, rnd, at) => { for (let i = 0; i < 22; i++) blob(g, rnd, at, 7 + rnd() * 9, i % 3 ? "rgba(20,45,15,.30)" : "rgba(150,180,110,.22)") }),
+    klinker: tile((g, rnd) => { g.strokeStyle = "rgba(0,0,0,.13)"; g.lineWidth = 1; for (let y = 0; y < PATTERN; y += 6) { g.beginPath(); g.moveTo(0, y); g.lineTo(PATTERN, y); g.stroke(); const off = (y / 6) % 2 ? 0 : 6; for (let x = off; x < PATTERN; x += 12) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 6); g.stroke() } } }),
+    gravel:  tile((g, rnd, at) => { dots(g, rnd, at, 700, 1, 2, "rgba(255,250,240,.16)"); dots(g, rnd, at, 500, 1, 2, "rgba(60,50,40,.14)") }),
+    grasgrid: tile((g, rnd, at) => { g.fillStyle = "rgba(90,130,60,.30)"; for (let i = 0; i < PATTERN; i += 8) { g.fillRect(0, i, PATTERN, 2); g.fillRect(i, 0, 2, PATTERN) } }),
+    bark:    tile((g, rnd, at) => { dots(g, rnd, at, 400, 2, 4, "rgba(70,45,25,.30)"); dots(g, rnd, at, 200, 2, 3, "rgba(150,110,70,.20)") }),
   }
   return Object.fromEntries(Object.entries(patternCanvases).map(([name, c]) => [name, ctx.createPattern(c, "repeat")]))
 }

@@ -11,7 +11,8 @@ const LAYER_MARGIN = 1           // the cached map layer extends this many view 
 const BASE = "#d7dec3"
 const COVER = {
   1: "#c3da98", 2: "#cde0a6", 3: "#bad39a", 4: "#eadcae", 5: "#bfd99a", 6: "#c9da9f", 7: "#9cc286", 8: "#d3c7a6", 9: "#b3cd90",
-  10: "#b8cea4", 11: "#efe4c3", 12: "#d4d2b4", 20: "#e7e2d7", 21: "#cdcdcf", 22: "#dbd5ce", 23: "#ddd8cb", 24: "#d9d1bf", 30: "#9cc3e0"
+  10: "#b8cea4", 11: "#efe4c3", 12: "#d4d2b4", 13: "#8fb87c", 14: "#95bd81", 15: "#9cc286", 16: "#b2c79c", 17: "#c0cda8", 18: "#f2e8cb",
+  19: "#8cb377", 20: "#e7e2d7", 21: "#cdcdcf", 22: "#dbd5ce", 23: "#ddd8cb", 24: "#d9d1bf", 25: "#cbdfa5", 30: "#9cc3e0"
 }
 const ROAD = {
   motorway: ["#e88b5a", 2.2], motorway_link: ["#e88b5a", 1.4], trunk: ["#f0a866", 2.0], trunk_link: ["#f0a866", 1.3],
