@@ -4,7 +4,7 @@ source "https://rubygems.org"
 gem "rails", "~> 8.1.3", ">= 8.1.3.1"
 # json 3.x made JSON.parse keyword-only; Rails 8.1.3 still passes a positional options hash
 # (breaks every signed/encrypted cookie read on Ruby 4.0). Drop this pin once Rails ships the fix.
-gem "json", "< 3"
+gem "json", "< 4"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
 # Use postgresql as the database for Active Record
