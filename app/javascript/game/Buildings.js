@@ -1,9 +1,8 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { collapseRange, scaleRange, buildingHp } from "game/Destructibles"
+import { buildingMaterial } from "game/BuildingTextures"
 
-const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })
-material.__shared = true
 
 const palette = {
   church: 0x8c8378, cathedral: 0x8c8378,
@@ -32,7 +31,8 @@ export function buildBuildings(buildings, reg) {
     const cols = new Float32Array(g.attributes.position.count * 3)
     for (let i = 0; i < cols.length; i += 3) { cols[i] = color.r * tint; cols[i + 1] = color.g * tint; cols[i + 2] = color.b * tint }
     g.setAttribute("color", new THREE.BufferAttribute(cols, 3))
-    g.deleteAttribute("uv")
+    // ExtrudeGeometry's own UVs are already in metres (sides along × depth, caps in shape units), which is what the
+    // brick map wants: it repeats by the metre, so the numbers go straight through
     geos.push(g)
     const count = g.attributes.position.count
     if (reg && b.id != null) {
@@ -46,5 +46,5 @@ export function buildBuildings(buildings, reg) {
   const merged = mergeGeometries(geos, false)
   geos.forEach((g) => g.dispose())
   for (const h of handles) reg(h.key, { ...h, remove: () => collapseRange(merged.attributes.position, h.start, h.count), tint: (k) => scaleRange(merged.attributes.color, h.start, h.count, k) })
-  return new THREE.Mesh(merged, material)
+  return new THREE.Mesh(merged, buildingMaterial("steen"))
 }

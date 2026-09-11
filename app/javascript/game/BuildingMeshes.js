@@ -1,34 +1,58 @@
 import * as THREE from "three"
 import { collapseRange, scaleRange, hullXZ, buildingHp } from "game/Destructibles"
+import { buildingMaterial } from "game/BuildingTextures"
+import { TUNING as T } from "game/Tuning"
 
-// 3D BAG LoD2.2 buildings: faces (roof planes and walls) triangulated here with earcut and merged into one
-// flat-shaded, vertex-coloured mesh per tile. Tile format per building: { id, roof, o: [x, y, z], f: [[label, outer, hole, ...], ...] }
-// where rings are flat centimetre offsets [dx, dy, dz, ...] from o. Label 1 = roof, 2 = wall. `fp` holds the ground
-// outline as flat [x, z, ...] rings in game units. With `reg` every building registers a destructible handle: its
-// vertex range in the merged geometry, collapsed when it falls.
-const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide })
-material.__shared = true
-
+// 3D BAG LoD2.2 buildings: faces (roof planes and walls) triangulated here with earcut and merged per material into
+// one flat-shaded, vertex-coloured mesh each per tile. Tile format per building: { id, roof, o: [x, y, z],
+// f: [[label, outer, hole, ...], ...] } where rings are flat centimetre offsets [dx, dy, dz, ...] from o. Label 1 =
+// roof, 2 = wall. `fp` holds the ground outline as flat [x, z, ...] rings in game units. With `reg` every building
+// registers a destructible handle: the vertex ranges it owns in each merged geometry, collapsed when it falls.
+//
+// The texture comes from the face's own plane. Earcut already needs a 2D basis per face, and that basis is exactly
+// the one a bricklayer would use: u = up × n runs horizontally along a wall and up the slope of a roof, v is world
+// up on a wall. So the UV is a subtraction and a divide, with no unwrapping and no extra geometry.
+//
+// Walls wide and tall enough get the facade cell, which holds one window in one bay by one storey. The number of
+// bays comes from the face's own width and the number of storeys from the building's wall height, both rounded to
+// whole numbers, so window rows line up around every corner, the eave never cuts a row in half and every outside
+// corner keeps a pier of brick. Everything narrower — the jogs, the dormer cheeks, the 44 % of faces under two
+// metres — falls through to plain brick, which is what those are.
 const WALLS = [0xd9c4a5, 0xcdb597, 0xb99c7a, 0xa8836a, 0xe3d6c3, 0xc9c1b4, 0x9c7b66, 0xdccbb6]  // brick, plaster, dark brick
-const PITCHED = [0x6e3d33, 0x5a3a35, 0x4b4548, 0x7a4a3c, 0x3f3b3d, 0x8a5646]                   // tiles: terracotta to anthracite
-const FLAT = [0x6f6c68, 0x7d7a74, 0x5e5c59]                                                      // bitumen / gravel
+const PITCHED = [0x8e5a4a, 0x7a4f48, 0x64605f, 0x9c6350, 0x565152, 0xa8705a]                   // tiles: terracotta to anthracite
+const FLAT = [0x8f8c86, 0x9d9a93, 0x7e7c78]                                                     // bitumen / gravel
 const POOL3 = [], POOL2 = []                                                                      // scratch vectors reused per face
 const X_AXIS = new THREE.Vector3(1, 0, 0)
 
 export function buildBuildingMeshes(meshes, reg) {
   if (!meshes?.length) return null
-  const pos = [], col = [], handles = []
+  const buckets = new Map()                                     // material name → { pos, col, uv }
+  const bucket = (name) => { let b = buckets.get(name); if (!b) buckets.set(name, b = { pos: [], col: [], uv: [] }); return b }
+  const handles = []
   const color = new THREE.Color()
   const pts3 = [], pts2 = []
   const normal = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+  const B = T.buildings
 
   for (const b of meshes) {
     const h = hash(b.id)
     const wall = WALLS[h % WALLS.length]
-    const roof = b.roof === "horizontal" ? FLAT[h % FLAT.length] : PITCHED[(h >> 3) % PITCHED.length]
+    const flat = b.roof === "horizontal"
+    const roof = flat ? FLAT[h % FLAT.length] : PITCHED[(h >> 3) % PITCHED.length]
     const [ox, oy, oz] = b.o
-    const start = pos.length / 3, xz = []
+    // the storeys are the building's, not the face's, so every wall of it carries the same rows
+    let wallTop = -Infinity
+    for (const face of b.f) if (face[0] === 2) for (let r = 1; r < face.length; r++) { const ring = face[r]; for (let i = 1; i < ring.length; i += 3) if (ring[i] > wallTop) wallTop = ring[i] }
+    const wallH = wallTop > -Infinity ? wallTop / 100 : 0
+    const storeys = Math.max(1, Math.round(wallH / B.storey))
+    const storeyH = wallH / storeys
+    const windows = wallH >= B.minHeight
+    const lights = (h >> 7) % 3 !== 0                            // two houses in three have their lights on at night
+    const at = {}
+    for (const [name, part] of buckets) at[name] = part.pos.length / 3
+    const xz = []
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, top = -Infinity
+
     for (const face of b.f) {
       const label = face[0]
       // rings → arrays of Vector3 (outer first, then holes); the vectors come from a pool reused per face, since a
@@ -36,9 +60,9 @@ export function buildBuildingMeshes(meshes, reg) {
       const rings = []
       let used = 0
       for (let r = 1; r < face.length; r++) {
-        const flat = face[r], ring = []
-        for (let i = 0; i + 2 < flat.length; i += 3) {
-          const p = (POOL3[used] ??= new THREE.Vector3()).set(ox + flat[i] / 100, oy + flat[i + 1] / 100, oz + flat[i + 2] / 100); used++
+        const ring2 = face[r], ring = []
+        for (let i = 0; i + 2 < ring2.length; i += 3) {
+          const p = (POOL3[used] ??= new THREE.Vector3()).set(ox + ring2[i] / 100, oy + ring2[i + 1] / 100, oz + ring2[i + 2] / 100); used++
           ring.push(p)
           if (reg) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); top = Math.max(top, p.y); if (!b.fp) xz.push(p.x, p.z) }
         }
@@ -48,41 +72,72 @@ export function buildBuildingMeshes(meshes, reg) {
       newell(rings[0], normal)
       if (normal.lengthSq() < 1e-12) continue
       normal.normalize()
-      // 2D basis in the face plane for earcut
+      // 2D basis in the face plane for earcut, and the texture frame: on a wall u is horizontal and v is world up
       u.copy(Math.abs(normal.y) > 0.9 ? X_AXIS : up).cross(normal).normalize()
       v.crossVectors(normal, u)
       pts3.length = 0; pts2.length = 0
       const contour = [], holes = []
-      let used2 = 0
+      let used2 = 0, u0 = Infinity, u1 = -Infinity, v0 = Infinity
       for (let r = 0; r < rings.length; r++) {
         const target = r === 0 ? contour : []
-        for (const p of rings[r]) { pts3.push(p); target.push((POOL2[used2] ??= new THREE.Vector2()).set(p.dot(u), p.dot(v))); used2++ }
+        for (const p of rings[r]) {
+          const q = (POOL2[used2] ??= new THREE.Vector2()).set(p.dot(u), p.dot(v)); used2++
+          pts3.push(p); pts2.push(q); target.push(q)
+          if (r === 0) { if (q.x < u0) u0 = q.x; if (q.x > u1) u1 = q.x; if (q.y < v0) v0 = q.y }
+        }
         if (r > 0) holes.push(target)
       }
       let tris
       try { tris = THREE.ShapeUtils.triangulateShape(contour, holes) } catch { continue }
-      // flat colour per face: slight per-face tint so adjacent walls read as separate planes
+
+      const width = u1 - u0
+      const gevel = label === 2 && windows && width >= B.minWidth
+      const name = label === 1 ? (flat ? "bitumen" : "pannen") : gevel ? (lights ? "gevel" : "gevel-uit") : "steen"
+      const part = bucket(name)
+      // the facade is measured in bays and storeys, everything else in metres (its map repeats by the metre)
+      const su = gevel ? 1 / (width / Math.max(1, Math.round(width / B.bay))) : 1
+      const sv = gevel ? 1 / storeyH : 1
+      const base = label === 2 ? oy : v0                        // walls start at the building's foot, roofs at the eave
+
       const tint = 0.92 + ((h ^ (face.length * 7919)) % 17) / 100
       color.setHex(label === 1 ? roof : wall)
-      const shade = label === 1 ? 1 : 0.85 + 0.15 * Math.abs(normal.x)     // walls: fake directional light
-      const r = color.r * tint * shade, g = color.g * tint * shade, bl = color.b * tint * shade
+      const cr = color.r * tint, cg = color.g * tint, cb = color.b * tint
       for (const [a, b2, c] of tris) {
-        for (const i of [a, b2, c]) { const p = pts3[i]; pos.push(p.x, p.y, p.z); col.push(r, g, bl) }
+        for (const i of [a, b2, c]) {
+          const p = pts3[i], q = pts2[i]
+          part.pos.push(p.x, p.y, p.z)
+          part.col.push(cr, cg, cb)
+          part.uv.push((q.x - u0) * su, (label === 2 ? p.y - base : q.y - base) * sv)
+        }
       }
     }
-    const count = pos.length / 3 - start
-    if (reg && count) {
-      const rings = b.fp ?? [hullXZ(xz)]
-      handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, h: top - oy, max: buildingHp(rings), start, count })
+
+    if (reg) {
+      const parts = []
+      for (const [name, p] of buckets) { const start = at[name] ?? 0, count = p.pos.length / 3 - start; if (count) parts.push({ name, start, count }) }
+      if (parts.length) {
+        const rings = b.fp ?? [hullXZ(xz)]
+        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, h: top - oy, max: buildingHp(rings), parts })
+      }
     }
   }
-  if (!pos.length) return null
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3))
-  geo.computeVertexNormals()          // non-indexed → one normal per triangle = flat shading
-  for (const h of handles) reg(h.key, { ...h, remove: () => collapseRange(geo.attributes.position, h.start, h.count), tint: (k) => scaleRange(geo.attributes.color, h.start, h.count, k) })
-  return new THREE.Mesh(geo, material)
+
+  if (!buckets.size) return null
+  const group = new THREE.Group(), geos = new Map()
+  for (const [name, part] of buckets) {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(part.pos, 3))
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(part.col, 3))
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(part.uv, 2))
+    geo.computeVertexNormals()          // non-indexed → one normal per triangle = flat shading
+    geos.set(name, geo)
+    group.add(new THREE.Mesh(geo, buildingMaterial(name)))
+  }
+  // a building's vertices are contiguous inside each bucket, so its handle is a short list of ranges
+  for (const handle of handles) reg(handle.key, { ...handle,
+    remove: () => { for (const p of handle.parts) collapseRange(geos.get(p.name).attributes.position, p.start, p.count) },
+    tint: (k) => { for (const p of handle.parts) scaleRange(geos.get(p.name).attributes.color, p.start, p.count, k) } })
+  return group
 }
 
 // Newell's method: robust polygon normal for concave / slightly non-planar rings

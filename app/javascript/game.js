@@ -3,6 +3,7 @@ import { World } from "game/World"
 import { ChunkManager } from "game/ChunkManager"
 import { updateSignals, setNightLevel } from "game/Furniture"
 import { setSignsNight } from "game/Signs"
+import { setBuildingsNight } from "game/BuildingTextures"
 import { DayNight } from "game/DayNight"
 import { Environment } from "game/Environment"
 import { updateWater, updateGround } from "game/Cover"
@@ -182,7 +183,7 @@ async function main() {
     updateSignals()
     const darkness = dayNight.update()
     environment.update(dayNight.env, world.hemi.groundColor, timer.getElapsed(), dt * 1000)
-    car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness)
+    car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness); setBuildingsNight(darkness)
     updateWater(dayNight.env, timer.getElapsed())
     updateGround()
     scatter.update(dt, timer.getElapsed(), car)

@@ -75,6 +75,11 @@ export const TUNING = {
            step: 0.02, minInterval: 0.25, maxInterval: 2, skipMs: 24 },         // re-bake this far apart, never on a slow frame
     outline: { on: true, thickness: 0.003, color: [0.12, 0.08, 0.1], alpha: 0.85 },   // cartoon edges on buildings and cars (on: live)
   },
+  buildings: {
+    storey: 3.0, bay: 2.8,                    // a facade cell: one storey tall, one bay wide (reload: baked into the UVs)
+    minWidth: 2.0, minHeight: 2.4,            // walls smaller than this get plain brick instead of a window
+    lit: 0.42,                                // how brightly the windows burn at night (live)
+  },
   ground: {
     detail: { repeat: 125, strength: 0.45, fadeNear: 120, fadeFar: 300 },   // terrain grain: 125 repeats over 500 m = 4 m, fading out with distance (live)
     paint: { minPx: 24, maxPolys: 160, budgetMs: 8 },                       // cover canvas detail: only polygons this big, this many, this long

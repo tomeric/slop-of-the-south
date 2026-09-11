@@ -141,7 +141,12 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/TerrainTile.js      heightmap → mesh, bilinear heightAt(x, z)
     game/Roads.js            polylines → draped ribbons
     game/Buildings.js        footprints → extruded, merged meshes (OSM / fallback)
-    game/BuildingMeshes.js   3D BAG LoD2.2 faces → triangulated, flat-shaded meshes
+    game/BuildingMeshes.js   3D BAG LoD2.2 faces → triangulated meshes, one per material, with a facade UV
+    game/BuildingTextures.js brick, pantiles, bitumen and the facade cell: one window in one bay by one storey
+    game/Textures.js         the procedural kit: canvas textures tiled by the metre, plus speckle/grain/cracks/bricks
+    game/Environment.js      the ambient light, PMREM-baked from the sky DayNight draws
+    game/Outline.js          the cartoon outline pass, and who opts out of it
+    game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
     game/Cover.js            land cover → per-tile canvas texture on the terrain; water polygons → draped skins
     game/Trees.js            procedural branching trees, a few seeded variants per kind, instanced per tile;
                              variant, rotation, width and tint come from the tree position, so every tree is stable
