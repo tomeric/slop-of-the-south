@@ -19,6 +19,7 @@ class RoadBuilder
   MAJOR = %w[motorway motorway_link trunk trunk_link primary primary_link].freeze
   PATHS = %w[cycleway track].freeze
   KINDS_WITHOUT_TERRAIN_WORK = PATHS   # narrow paths do not terrace the fields; their ribbons follow the terrain client-side
+  COVERED = 0.5         # a road BGT paves less of than this keeps its own ribbon on the client
 
   RoadRow = Struct.new(:id, :kind, :name, :width, :lanes, :surface, :oneway, :bridge, :tunnel, :pts)   # pts: [[x, y], …] RD
 
@@ -31,6 +32,7 @@ class RoadBuilder
     s = World::TILE_SIZE
     x0, y0, x1, y1 = tx * s, ty * s, (tx + 1) * s, (ty + 1) * s
     rows = fetch(x0 - MARGIN, y0 - MARGIN, x1 + MARGIN, y1 + MARGIN)
+    paved = RoadSurface.paved_fraction(x0 - MARGIN, y0 - MARGIN, x1 + MARGIN, y1 + MARGIN)
     crossings = water_crossings(x0 - MARGIN, y0 - MARGIN, x1 + MARGIN, y1 + MARGIN)
     profiles = rows.reject(&:tunnel).map { |r| [ r, profile(r) ] }
     nodes = junction_nodes(profiles)
@@ -39,7 +41,7 @@ class RoadBuilder
     profiles.each_with_index { |(_, prof), ri| decks!(ri, prof, profiles, nodes) }
     pieces = profiles.flat_map { |road, prof| cut_at_junctions(road, prof, nodes) }
     {
-      roads: pieces.filter_map { |road, pts| clip(road, pts, x0, y0, x1, y1) },
+      roads: pieces.filter_map { |road, pts| clip(road, pts, x0, y0, x1, y1, paved) },
       junctions: nodes.values.select { |n| n[:degree] >= 3 && n[:x].between?(x0, x1) && n[:y].between?(y0, y1) }
                       .map { |n| gx, gz = World.to_game(n[:x], n[:y]); [ gx.round(2), gz.round(2), n[:h].round(2), n[:r].round(2) ] },
       deform: deformer(pieces, nodes)
@@ -286,7 +288,7 @@ class RoadBuilder
   end
 
   # clip a 3D polyline (RD x, y, h) to the tile envelope; returns the tile road entry or nil
-  def clip(road, pts, x0, y0, x1, y1)
+  def clip(road, pts, x0, y0, x1, y1, paved = {})
     inside = ->(p) { p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1 }
     out = []
     pts.each_cons(2) do |a, b|
@@ -297,7 +299,8 @@ class RoadBuilder
     end
     return nil if out.size < 2 || !pts.any?(&inside) && out.size < 2
     game = out.map { |x, y, h, b| gx, gz = World.to_game(x, y); [ gx.round(2), gz.round(2), h.round(2), b ] }
-    { kind: road.kind, name: road.name, width: road.width, lanes: road.lanes, surface: road.surface, oneway: road.oneway, pts: game }.compact
+    ribbon = 1 if paved.fetch(road.id, 0.0) < COVERED            # BGT has no outline here: draw our own ribbon
+    { kind: road.kind, name: road.name, width: road.width, lanes: road.lanes, surface: road.surface, oneway: road.oneway, ribbon: ribbon, pts: game }.compact
   end
 
   # Liang–Barsky, interpolating the height

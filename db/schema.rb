@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_11_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_11_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -101,11 +101,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_090000) do
     t.string "function"
     t.geometry "geom", limit: {srid: 28992, type: "multi_polygon"}, null: false
     t.string "layer", null: false
+    t.integer "level", default: 0, null: false
     t.string "material"
     t.string "source_id", null: false
     t.datetime "updated_at", null: false
     t.index ["function"], name: "index_road_surfaces_on_function"
     t.index ["geom"], name: "index_road_surfaces_on_geom", using: :gist
+    t.index ["level"], name: "index_road_surfaces_on_level"
     t.index ["source_id"], name: "index_road_surfaces_on_source_id", unique: true
   end
 

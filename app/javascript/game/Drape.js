@@ -9,6 +9,8 @@
 //
 // A vertex is a plain array [x, z, …attributes]; the attributes (u, v, the road's own level, anything) are
 // interpolated at every cut, so a texture does not stretch where a triangle was split.
+import * as THREE from "three"
+
 const EPS = 1e-6
 
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t)
@@ -65,18 +67,37 @@ function refine(tris, maxEdge) {
   return out
 }
 
-// tris: triangles of vertices [x, z, …attrs]. Returns the same triangles cut to the grid.
-export function drape(tris, { step = 10, maxEdge = 7 } = {}) {
-  let out = refine(tris, maxEdge)
+// Whether a triangle already lies on the ground: the terrain is sampled at its edge midpoints and its centre and
+// compared with the triangle's own plane there. Under a road that is almost always true — the road builder flattens
+// the ground it sits on — and skipping those saves most of the cutting.
+function planar(t, heightAt, tol) {
+  const h = [heightAt(t[0][0], t[0][1]), heightAt(t[1][0], t[1][1]), heightAt(t[2][0], t[2][1])]
+  for (let i = 0; i < 3; i++) {
+    const a = t[i], b = t[(i + 1) % 3]
+    if (Math.abs(heightAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) - (h[i] + h[(i + 1) % 3]) / 2) > tol) return false
+  }
+  const cx = (t[0][0] + t[1][0] + t[2][0]) / 3, cz = (t[0][1] + t[1][1] + t[2][1]) / 3
+  return Math.abs(heightAt(cx, cz) - (h[0] + h[1] + h[2]) / 3) <= tol
+}
+
+// tris: triangles of vertices [x, z, …attrs] → the same triangles, cut where the ground under them bends. Whoever
+// lifts the result must lift it by at least `tol`, since that is how far the ground may still rise inside a triangle
+// that was left whole. Without `heightAt` everything is cut, which is safe and three times the triangles.
+export function drape(tris, { step = 10, maxEdge = 25, heightAt = null, tol = 0.05 } = {}) {
+  const flat = [], rough = []
+  // refine first, then ask: a long thin footway crosses a dozen cells as one earcut triangle and would always fail,
+  // while its seven-metre pieces mostly lie flat on the ground the road builder levelled for them
+  for (const t of refine(tris, maxEdge)) (heightAt && planar(t, heightAt, tol) ? flat : rough).push(t)
+  let out = refine(rough, maxEdge)
   out = cut(out, (v) => v[0], step)
   out = cut(out, (v) => v[1], step)
   out = cut(out, (v) => v[0] + v[1], step)
-  return out
+  return flat.concat(out)
 }
 
 // A ring of [x, z] pairs (outer first, holes after) → triangles of [x, z, u, v] with the UV in metres, ready for
 // `drape`. Earcut comes with three; the rings are in game coordinates, so the UV is just the position.
-export function ringsToTriangles(rings, THREE) {
+export function ringsToTriangles(rings) {
   const pts = [], contour = [], holes = []
   for (let r = 0; r < rings.length; r++) {
     const target = r === 0 ? contour : []
@@ -90,5 +111,12 @@ export function ringsToTriangles(rings, THREE) {
   let tris
   try { tris = THREE.ShapeUtils.triangulateShape(contour, holes) } catch { return [] }
   const flat = contour.concat(...holes)
-  return tris.map(([a, b, c]) => [a, b, c].map((i) => { const p = flat[i]; return [p.x, p.y, p.x, p.y] }))
+  // face up: the rings come from PostGIS in RD, where the y axis runs north, and the tile flips it into z running
+  // south — so the winding arrives reversed and every triangle would be culled from above
+  return tris.map(([ia, ib, ic]) => {
+    const a = flat[ia], b = flat[ib], c = flat[ic]
+    const up = (b.y - a.y) * (c.x - a.x) - (b.x - a.x) * (c.y - a.y) > 0
+    const [p, q, r] = up ? [a, b, c] : [a, c, b]
+    return [[p.x, p.y, p.x, p.y], [q.x, q.y, q.x, q.y], [r.x, r.y, r.x, r.y]]
+  })
 }

@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { TerrainTile } from "game/TerrainTile"
 import { buildRoads } from "game/Roads"
+import { buildSurfaces } from "game/Surfaces"
 import { buildBuildings } from "game/Buildings"
 import { buildBuildingMeshes } from "game/BuildingMeshes"
 import { buildTrees } from "game/Trees"
@@ -121,6 +122,12 @@ export class ChunkManager {
       const roads = buildRoads(data.roads, data.junctions, data.biome, (x, z) => terrain.heightAt(x, z))
       if (roads) group.add(roads)
       const roadIndex = indexRoads(data.roads, data.junctions ?? [])
+      // the surveyed road surfaces: they need the road index for the kerbs and for laying bricks along the street
+      const surfaces = buildSurfaces(data.surfaces, data.origin, (x, z) => terrain.heightAt(x, z), {
+        nearRoad: (x, z, m) => nearRoad(roadIndex, x, z, m),
+        headingAt: (x, z) => roadHeading(roadIndex, x, z),
+      })
+      if (surfaces) group.add(surfaces)
       const buildings = buildBuildings(data.buildings, reg)
       if (buildings) group.add(buildings)
       const meshes = buildBuildingMeshes(data.meshes, reg)
@@ -133,7 +140,7 @@ export class ChunkManager {
       }
       noOutlineInstanced(group)                                   // trees, grass, lamps, signs, pads: outlines ignore instanceMatrix
       this.scene.add(group)
-      const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [], coverSub: data.cover_sub ?? [] }
+      const tile = { key, tx, ty, group, terrain, roads: data.roads, roadIndex, junctions: data.junctions ?? [], biome: data.biome, objects, cover: data.cover ?? [], coverSub: data.cover_sub ?? [], surfaces: data.surfaces ?? [] }
       this.tiles.set(key, tile)
       this.hooks.onTile?.(tile)
     } catch (e) {
@@ -207,6 +214,23 @@ export function nearRoad(index, x, z, margin) {
     if (out <= margin) return true
   }
   return false
+}
+
+// the heading of the nearest road segment, for laying bricks and tiles along the street rather than north-south
+export function roadHeading(index, x, z) {
+  if (!index) return 0
+  const cx = Math.floor((x - index.x0) / CELL), cz = Math.floor((z - index.z0) / CELL)
+  if (cx < 0 || cz < 0 || cx >= index.nx || cz >= index.nz) return 0
+  let best = Infinity, angle = 0
+  for (const s of index.cells[cz * index.nx + cx] ?? []) {
+    if (s.length === 4) continue
+    const dx = s[3] - s[0], dz = s[4] - s[1]
+    const len2 = dx * dx + dz * dz || 1
+    const t = Math.max(0, Math.min(1, ((x - s[0]) * dx + (z - s[1]) * dz) / len2))
+    const d = Math.hypot(s[0] + dx * t - x, s[1] + dz * t - z)
+    if (d < best) { best = d; angle = Math.atan2(dz, dx) }
+  }
+  return angle
 }
 
 // Ground height at (x, z): on a road ribbon or junction patch it is the surface the client draws (the road level or the

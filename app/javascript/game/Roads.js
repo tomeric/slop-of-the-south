@@ -3,17 +3,17 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { noOutline } from "game/Outline"
 import { drape } from "game/Drape"
 
-// Procedural roads. Tile entries carry ready-made 3D centrelines (RoadBuilder: smoothed, junction-pinned, seated in
-// the terrain) as pts [x, z, y] where y IS the road surface level; the terrain bed under a road is at that level and
-// the verge beside it a curb higher. Each road becomes a flat ribbon lifted ROAD_LIFT (a z-fighting epsilon) above
-// the higher of its own level and the terrain under each vertex — the 10 m height grid smears the curb step across the
-// ribbon edge, so ribbons follow the terrain wherever it pokes above them. Style comes from class, width, surface and
-// whether the tile is built-up: procedural textures provide asphalt, klinkers, gravel, red cycle asphalt and the lane
-// markings (edge lines, centre dashes, lane dashes); town streets get raised sidewalks a CURB above the road.
-// Junctions (three or more roads) are covered by a plain patch so markings stop short of the crossing. Bridges get
-// parapets and pillars.
+// What the centrelines still draw. The road surface itself comes from the surveyed BGT outlines (game/Surfaces.js);
+// this module keeps the things that need a direction along the road: the lane markings, and the bridges.
+//
+// Tile entries carry ready-made 3D centrelines (RoadBuilder: smoothed, junction-pinned, seated in the terrain) as
+// pts [x, z, y] where y IS the road surface level, already cut back where three or more roads meet, so markings
+// stop short of a crossing on their own. Markings are drawn as an alpha-tested ribbon over the full road width.
+// A road BGT does not pave (`ribbon`, the German border strip, a new estate) falls back to the old full-width
+// ribbon with its own asphalt, klinkers or gravel, its sidewalks and a patch over the junctions.
 export const ROAD_LIFT = 0.05
 export const CURB = 0.12
+const MARK = 0.13                                    // the markings ride above the surveyed surface under them
 const LIFT = ROAD_LIFT, TEX_LEN = 24, SIDEWALK = 1.7
 const URBAN = new Set(["stad", "woonwijk", "dorp"])
 
@@ -22,13 +22,16 @@ function texture(name) {
   if (textures[name]) return textures[name]
   const c = document.createElement("canvas"); c.width = 256; c.height = 512
   const ctx = c.getContext("2d")
+  const marks = name.startsWith("mark-")
   const base = { cycle: "#8a3d34", gravel: "#9c8d72", klinker: "#7a6459", pavers: "#a9a29a" }[name.split("-")[0]] ?? "#3b3c40"
-  ctx.fillStyle = base; ctx.fillRect(0, 0, 256, 512)
+  if (!marks) { ctx.fillStyle = base; ctx.fillRect(0, 0, 256, 512) }
   // speckle
   const rnd = mulberry32(7)
-  ctx.globalAlpha = 0.18
-  for (let i = 0; i < 1800; i++) { ctx.fillStyle = rnd() > 0.5 ? "#000" : "#fff"; ctx.fillRect(rnd() * 256, rnd() * 512, 2, 2) }
-  ctx.globalAlpha = 1
+  if (!marks) {
+    ctx.globalAlpha = 0.18
+    for (let i = 0; i < 1800; i++) { ctx.fillStyle = rnd() > 0.5 ? "#000" : "#fff"; ctx.fillRect(rnd() * 256, rnd() * 512, 2, 2) }
+    ctx.globalAlpha = 1
+  }
   if (name === "klinker") {                     // brick bond
     ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 2
     for (let y = 0; y < 512; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke()
@@ -42,14 +45,20 @@ function texture(name) {
   const white = "#e8e8e2"
   const edge = () => { ctx.fillStyle = white; ctx.fillRect(8, 0, 5, 512); ctx.fillRect(243, 0, 5, 512) }
   const dashes = (x, on = 3, off = 9) => { ctx.fillStyle = white; for (let y = 0; y < 512; y += (on + off) * (512 / TEX_LEN)) ctx.fillRect(x - 2, y, 5, on * (512 / TEX_LEN)) }
-  if (name === "asphalt-edge-centre") { edge(); dashes(128) }
-  if (name === "asphalt-centre") dashes(128)
-  if (name.startsWith("asphalt-lanes-")) { edge(); const lanes = Number(name.split("-")[2]); for (let i = 1; i < lanes; i++) dashes(256 * i / lanes, 3, 6) }
+  if (name === "asphalt-edge-centre" || name === "mark-edge-centre") { edge(); dashes(128) }
+  if (name === "asphalt-centre" || name === "mark-centre") dashes(128)
+  if (name.startsWith("asphalt-lanes-") || name.startsWith("mark-lanes-")) { edge(); const lanes = Number(name.split("-").at(-1)); for (let i = 1; i < lanes; i++) dashes(256 * i / lanes, 3, 6) }
   const tex = new THREE.CanvasTexture(c)
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4
   textures[name] = tex
   return tex
+}
+
+const markMaterials = {}
+function markMaterial(name) {
+  return markMaterials[name] ??= noOutline(Object.assign(
+    new THREE.MeshStandardMaterial({ map: texture(name), roughness: 0.9, alphaTest: 0.5, transparent: false }), { __shared: true }))
 }
 
 const materials = {}
@@ -59,7 +68,18 @@ function material(name) {
 const junctionMat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture("asphalt"), roughness: 0.95 }), { __shared: true }))
 const concrete = Object.assign(new THREE.MeshStandardMaterial({ color: 0x9a9892, roughness: 0.9 }), { __shared: true })
 
-// which texture for a road: class, width, surface and whether the tile is built-up decide
+// the lane markings a road carries, or null for the quiet streets that have none
+function markingsOf(road, urban) {
+  const k = road.kind
+  if (k === "cycleway" || k === "track" || k === "service" || k === "living_street") return null
+  if (k === "motorway" || k === "trunk") return `mark-lanes-${Math.min(4, Math.max(2, road.lanes ?? 2))}`
+  if (k === "motorway_link" || k === "trunk_link") return null
+  if (k === "primary" || k === "secondary") return urban ? "mark-centre" : "mark-edge-centre"
+  if (k === "tertiary" || k === "unclassified") return !urban && road.width >= 5.5 ? "mark-centre" : null
+  return null
+}
+
+// which texture a fallback ribbon gets: class, width, surface and whether the tile is built-up decide
 function styleOf(road, urban) {
   const k = road.kind, s = road.surface ?? ""
   if (k === "cycleway") return "cycle"
@@ -79,24 +99,30 @@ export function buildRoads(roads, junctions, biome, terrainAt = null) {
   const urban = URBAN.has(biome)
   const byMat = new Map()
   const add = (mat, geo) => { if (!byMat.has(mat)) byMat.set(mat, []); byMat.get(mat).push(geo) }
+  let fallback = false
   for (const road of roads) {
     if (road.pts.length < 2) continue
-    add(material(styleOf(road, urban)), ribbon(road.pts, road.width / 2, LIFT, 0, terrainAt))
-    if (sidewalks(road, urban)) {
-      for (const side of [-1, 1]) add(material("pavers"), ribbon(road.pts, SIDEWALK / 2, LIFT + CURB, side * (road.width / 2 + SIDEWALK / 2), terrainAt))
+    if (road.ribbon) {                                             // BGT does not pave this one: draw it ourselves
+      fallback = true
+      add(material(styleOf(road, urban)), ribbon(road.pts, road.width / 2, LIFT, 0, terrainAt))
+      if (sidewalks(road, urban)) {
+        for (const side of [-1, 1]) add(material("pavers"), ribbon(road.pts, SIDEWALK / 2, LIFT + CURB, side * (road.width / 2 + SIDEWALK / 2), terrainAt))
+      }
     }
+    const marks = markingsOf(road, urban)
+    if (marks) add(markMaterial(marks), ribbon(road.pts, road.width / 2, MARK, 0, terrainAt))
     for (const span of bridgeRuns(road.pts)) {
       for (const side of [-1, 1]) add(concrete, wall(span, LIFT + 0.9, LIFT, side * (road.width / 2 + 0.15)))
       add(concrete, pillars(span, road, roads))
     }
   }
-  for (const [x, z, y, r] of junctions ?? []) {
+  for (const [x, z, y, r] of fallback ? junctions ?? [] : []) {      // the surveyed outlines already cover a crossing
     const tris = []
     for (let i = 0; i < 16; i++) {                               // a fan, in 2D, with the junction's level on every vertex
       const a = i / 16 * Math.PI * 2, b = (i + 1) / 16 * Math.PI * 2
       tris.push([[x, z, 0.5, 0.5, y], [x + Math.cos(b) * r, z + Math.sin(b) * r, 0.5, 0.5, y], [x + Math.cos(a) * r, z + Math.sin(a) * r, 0.5, 0.5, y]])
     }
-    add(junctionMat, toGeometry(drape(tris), LIFT + 0.01, terrainAt))
+    add(junctionMat, toGeometry(drape(tris, { heightAt: terrainAt }), LIFT + 0.01, terrainAt))
   }
   if (!byMat.size) return null
   const group = new THREE.Group()
@@ -141,7 +167,7 @@ function ribbon(pts, hw, lift, offset = 0, terrainAt = null) {
     const L1 = [blx, blz, 0, along / TEX_LEN, yb], R1 = [brx, brz, 1, along / TEX_LEN, yb]
     tris.push([L0, L1, R0], [R0, L1, R1])
   }
-  return toGeometry(drape(tris), lift, terrainAt)
+  return toGeometry(drape(tris, { heightAt: terrainAt }), lift, terrainAt)
 }
 
 // draped triangles ([x, z, u, v, level]) → a geometry, every vertex lifted above whichever is higher

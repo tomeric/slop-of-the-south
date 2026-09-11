@@ -210,8 +210,8 @@ namespace :bgt do
     zips = Dir[BULK_DIR.join("*-wegdeel+ondersteunendwegdeel.zip").to_s].sort
     raise "no wegdeel extracts; run BGT_BULK_TYPES=wegdeel,ondersteunendwegdeel bin/rails bgt:bulk_fetch" if zips.empty?
     layers = {
-      "bgt_wegdeel" => %(SELECT gml_id, "bgt-functie" AS function, "bgt-fysiekVoorkomen" AS material, eindRegistratie, objectEindTijd FROM Wegdeel),
-      "bgt_ondersteunendwegdeel" => %(SELECT gml_id, "bgt-functie" AS function, "bgt-fysiekVoorkomen" AS material, eindRegistratie, objectEindTijd FROM OndersteunendWegdeel)
+      "bgt_wegdeel" => %(SELECT gml_id, "bgt-functie" AS function, "bgt-fysiekVoorkomen" AS material, relatieveHoogteligging AS level, eindRegistratie, objectEindTijd FROM Wegdeel),
+      "bgt_ondersteunendwegdeel" => %(SELECT gml_id, "bgt-functie" AS function, "bgt-fysiekVoorkomen" AS material, relatieveHoogteligging AS level, eindRegistratie, objectEindTijd FROM OndersteunendWegdeel)
     }
     first = true
     zips.each_with_index do |zip, i|
@@ -232,12 +232,12 @@ namespace :bgt do
       conn.execute("DELETE FROM road_surfaces")
       { "bulk_bgt_wegdeel" => "wegdeel", "bulk_bgt_ondersteunendwegdeel" => "ondersteunend" }.each do |table, layer|
         n = conn.exec_update(<<~SQL)
-          INSERT INTO road_surfaces (source_id, layer, function, material, geom, created_at, updated_at)
-          SELECT DISTINCT ON (gml_id) gml_id, '#{layer}', function, material, ST_Multi(ST_CollectionExtract(ST_MakeValid(geom), 3)), now(), now()
+          INSERT INTO road_surfaces (source_id, layer, function, material, level, geom, created_at, updated_at)
+          SELECT DISTINCT ON (gml_id) gml_id, '#{layer}', function, material, COALESCE(level, 0), ST_Multi(ST_CollectionExtract(ST_MakeValid(geom), 3)), now(), now()
           FROM #{table}
           WHERE eindregistratie IS NULL AND objecteindtijd IS NULL AND NOT ST_IsEmpty(geom)
           ORDER BY gml_id
-          ON CONFLICT (source_id) DO UPDATE SET layer = EXCLUDED.layer, function = EXCLUDED.function, material = EXCLUDED.material, geom = EXCLUDED.geom, updated_at = now()
+          ON CONFLICT (source_id) DO UPDATE SET layer = EXCLUDED.layer, function = EXCLUDED.function, material = EXCLUDED.material, level = EXCLUDED.level, geom = EXCLUDED.geom, updated_at = now()
         SQL
         puts "#{layer}: #{n} polygons"
       end

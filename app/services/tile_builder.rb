@@ -12,7 +12,8 @@ class TileBuilder
     meshes = meshes_for(tx, ty)
     network = RoadBuilder.new(@heights).build(tx, ty)   # smoothed, pinned road profiles + terrain deformation
     water = water_beds(tx, ty, x0, y0 + s)              # surface levels and carved beds of the bigger water bodies
-    cover, cover_sub = cover_for(tx, ty, x0, y0 + s, water[:levels])
+    paved = RoadSurface.in_tile(tx, ty)                  # the surveyed road, footway and parking outlines
+    cover, cover_sub = cover_for(tx, ty, x0, y0 + s, water[:levels], paved)
     {
       tx: tx, ty: ty,
       origin: World.to_game(x0, y0 + s),      # game-space corner (west, north)
@@ -25,6 +26,7 @@ class TileBuilder
       furniture: FurnitureBuilder.new.build(tx, ty),
       cover: cover,
       cover_sub: cover_sub,
+      surfaces: surfaces_for(paved, x0, y0 + s),
       biome: LandCover.biome(LandCover.shares_in_tile(tx, ty))
     }
   end
@@ -130,9 +132,10 @@ class TileBuilder
   # Water entries carry their surface level (metres NAP, or null for water draped on the terrain) before the rings:
   # [30, level, outer_ring, hole_ring, ...]. Returns `cover_sub` alongside it: one BGT sub-kind code per entry
   # (LandCover::DETAILS, 0 where the source records none), which the client uses to pick a finer pattern.
-  def cover_for(tx, ty, x0, y1, levels = {})
+  def cover_for(tx, ty, x0, y1, levels = {}, paved = [])
     cover, sub = [], []
-    entries = LandCover.in_tile(tx, ty) + RoadSurface.verges_in_tile(tx, ty)
+    verges = paved.filter_map { |cls, _mat, polys| [ LandCover::VERGE, polys, nil, 0 ] if cls == RoadSurface::VERGE }
+    entries = LandCover.in_tile(tx, ty) + verges
     entries.sort_by { |code, _| [ LandCover::ORDER.call(code), code ] }.each do |code, polys, water, detail|
       polys.each do |rings|
         rings = rings.map { |ring| ring_dm(ring, x0, y1) }.reject { _1.size < 6 }
@@ -142,6 +145,19 @@ class TileBuilder
       end
     end
     [ cover, sub ]
+  end
+
+  # The road surfaces the client draws on the ground: [class, material, outer_ring, hole_ring, ...] with rings as
+  # flat decimetre offsets from the tile origin, like `cover`. The green verges are not here — they are painted
+  # with the land cover instead (cover_for).
+  def surfaces_for(paved, x0, y1)
+    paved.flat_map do |cls, mat, polys|
+      next [] unless RoadSurface::DRAWN.include?(cls)
+      polys.filter_map do |rings|
+        rings = rings.map { |ring| ring_dm(ring, x0, y1) }.reject { _1.size < 6 }
+        [ cls, mat, *rings ] unless rings.empty?
+      end
+    end
   end
 
   # The AHN height inside water is the water surface, so lakes, rivers and canals get a bed carved below it:

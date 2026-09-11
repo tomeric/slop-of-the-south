@@ -73,6 +73,8 @@ in the game's about screen.
                                             ├── cover[]          [code, ring…]          (BGT land cover, dm offsets from the tile corner; painted)
                                             │                    water: [30, level | null, ring…] — level = flat surface over a carved bed
                                             ├── cover_sub[]      one BGT sub-kind per cover entry (0 = none): grass, shrubs, klinkers, asfalt …
+                                            ├── surfaces[]       [class, material, ring…] the surveyed road surfaces (0 rijbaan, 1 fietspad,
+                                            │                    2 voetpad, 3 parkeervlak, 4 inrit, 5 eiland; material 0 closed … 3 unpaved)
                                             ├── furniture        {lamps: [x, z, dir, h], signals: [x, z, face, group], signs: [x, z, face, code, black?, text?]}
                                             └── biome            "akkerland" | "woonwijk" | …
 
@@ -147,6 +149,8 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Environment.js      the ambient light, PMREM-baked from the sky DayNight draws
     game/Outline.js          the cartoon outline pass, and who opts out of it
     game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
+    game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
+    game/Drape.js            flat polygons → triangles cut to the terrain grid where the ground bends
     game/Cover.js            land cover → per-tile canvas texture on the terrain; water polygons → draped skins
     game/Trees.js            procedural branching trees, a few seeded variants per kind, instanced per tile;
                              variant, rotation, width and tint come from the tree position, so every tree is stable
