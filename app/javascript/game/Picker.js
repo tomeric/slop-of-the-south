@@ -2,8 +2,9 @@ import { VEHICLES } from "game/Vehicles"
 
 // The vehicle picker: three cards with a speed bar and the trick, and the field to change your name. Free while no
 // round runs (at the first join and behind the loading screen between towns); during a round picking costs the
-// shared action. Click or 1–3 picks, Enter keeps what you have, Escape closes. Keys typed into the name field stay
-// there: they neither drive nor pick.
+// shared action. Click or 1–3 picks, Enter keeps what you have, Escape closes. In the lobby the strip stays up after
+// a pick, so the name can still be changed; the mid-round picker closes on a pick. Keys typed into the name field
+// stay there: they neither drive nor pick.
 export class Picker {
   constructor(el, { onPick, onName }) {
     this.el = el
@@ -44,7 +45,8 @@ export class Picker {
 
   pick(id) {
     if (id !== this.current) this.onPick(VEHICLES.find((v) => v.id === id), this.free)
-    this.hide()
+    if (this.free) this.mark(id)
+    else this.hide()
   }
 
   digit(n) { if (this.open && VEHICLES[n - 1]) this.pick(VEHICLES[n - 1].id) }
