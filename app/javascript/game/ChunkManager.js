@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { TerrainTile } from "game/TerrainTile"
 import { buildRoads } from "game/Roads"
 import { buildSurfaces } from "game/Surfaces"
+import { buildBridges } from "game/Bridges"
 import { buildBuildings } from "game/Buildings"
 import { buildBuildingMeshes } from "game/BuildingMeshes"
 import { buildTrees } from "game/Trees"
@@ -128,6 +129,8 @@ export class ChunkManager {
         headingAt: (x, z) => roadHeading(roadIndex, x, z),
       })
       if (surfaces) group.add(surfaces)
+      const bridges = buildBridges(data.roads, (x, z) => terrain.heightAt(x, z))
+      if (bridges) group.add(bridges)
       const buildings = buildBuildings(data.buildings, reg)
       if (buildings) group.add(buildings)
       const meshes = buildBuildingMeshes(data.meshes, reg)

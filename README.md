@@ -150,6 +150,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Outline.js          the cartoon outline pass, and who opts out of it
     game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
     game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
+    game/Bridges.js          decks with a fascia and a soffit, parapets, railings, abutments and piers
     game/Drape.js            flat polygons → triangles cut to the terrain grid where the ground bends
     game/Cover.js            land cover → per-tile canvas texture on the terrain; water polygons → draped skins
     game/Trees.js            procedural branching trees, a few seeded variants per kind, instanced per tile;

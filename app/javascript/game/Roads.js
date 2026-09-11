@@ -66,7 +66,6 @@ function material(name) {
   return materials[name] ??= noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture(name), roughness: 0.95 }), { __shared: true }))
 }
 const junctionMat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture("asphalt"), roughness: 0.95 }), { __shared: true }))
-const concrete = Object.assign(new THREE.MeshStandardMaterial({ color: 0x9a9892, roughness: 0.9 }), { __shared: true })
 
 // the lane markings a road carries, or null for the quiet streets that have none
 function markingsOf(road, urban) {
@@ -111,10 +110,6 @@ export function buildRoads(roads, junctions, biome, terrainAt = null) {
     }
     const marks = markingsOf(road, urban)
     if (marks) add(markMaterial(marks), ribbon(road.pts, road.width / 2, MARK, 0, terrainAt))
-    for (const span of bridgeRuns(road.pts)) {
-      for (const side of [-1, 1]) add(concrete, wall(span, LIFT + 0.9, LIFT, side * (road.width / 2 + 0.15)))
-      add(concrete, pillars(span, road, roads))
-    }
   }
   for (const [x, z, y, r] of fallback ? junctions ?? [] : []) {      // the surveyed outlines already cover a crossing
     const tris = []
@@ -181,78 +176,6 @@ function toGeometry(tris, lift, terrainAt) {
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
   g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2))
   return g
-}
-
-// a vertical strip along the (offset) centre line, from `bottom` to `top` above the road level: bridge parapets
-function wall(pts, top, bottom, offset) {
-  const edges = edgesOf(pts, 0, offset)
-  const verts = [], uvs = [], idx = []
-  let along = 0
-  for (let i = 0; i < pts.length; i++) {
-    const y = pts[i][2]
-    if (i > 0) along += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
-    const [, , , , cx, cz] = edges[i]
-    verts.push(cx, y + bottom, cz, cx, y + top, cz)
-    uvs.push(0, along / TEX_LEN, 1, along / TEX_LEN)
-    if (i > 0) { const a = 2 * (i - 1); idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
-  }
-  const g = new THREE.BufferGeometry()
-  g.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3))
-  g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2))
-  g.setIndex(idx)
-  return g.toNonIndexed()
-}
-
-// bridge pillars about every 25 m along the deck, from the deck down 40 m (the terrain or water cuts them off),
-// turned to the deck heading; a pillar that would land on another road moves along the deck until it stands clear
-function pillars(pts, road, roads) {
-  const geos = []
-  const across = Math.max(1.2, road.width * 0.35)
-  let along = 0, last = -13
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, az, ay] = pts[i - 1], [bx, bz, by] = pts[i]
-    const seg = Math.hypot(bx - ax, bz - az)
-    for (let d = 0; d < seg; d += 2) {
-      if (along + d - last < 25) continue
-      const t = d / seg, x = ax + (bx - ax) * t, z = az + (bz - az) * t
-      if (!clearOfRoads(x, z, roads, road, across / 2 + 1)) continue
-      const g = new THREE.BoxGeometry(1.2, 40, across)
-      g.rotateY(-Math.atan2(bz - az, bx - ax))
-      g.translate(x, ay + (by - ay) * t - 20 + LIFT, z)
-      const ng = g.toNonIndexed()
-      ng.deleteAttribute("normal")
-      ng.deleteAttribute("uv"); ng.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(ng.attributes.position.count * 2), 2))
-      geos.push(ng)
-      last = along + d
-    }
-    along += seg
-  }
-  if (!geos.length) { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute([], 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute([], 2)); return g }
-  const merged = mergeGeometries(geos, false); geos.forEach((g) => g.dispose()); return merged
-}
-
-// whether (x, z) keeps `margin` metres between itself and the ribbon of every road but `own`
-function clearOfRoads(x, z, roads, own, margin) {
-  for (const r of roads) {
-    if (r === own) continue
-    const reach = r.width / 2 + margin
-    for (let i = 1; i < r.pts.length; i++) {
-      const [ax, az] = r.pts[i - 1], [bx, bz] = r.pts[i]
-      const dx = bx - ax, dz = bz - az, len2 = dx * dx + dz * dz
-      const t = len2 ? Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2)) : 0
-      if (Math.hypot(ax + dx * t - x, az + dz * t - z) < reach) return false
-    }
-  }
-  return true
-}
-
-// consecutive runs of bridge points ([x, z, y, 1]), each at least two points long
-function bridgeRuns(pts) {
-  const runs = []
-  let run = []
-  for (const p of pts) { if (p[3] === 1) run.push(p); else { if (run.length > 1) runs.push(run); run = [] } }
-  if (run.length > 1) runs.push(run)
-  return runs
 }
 
 function mulberry32(seed) {
