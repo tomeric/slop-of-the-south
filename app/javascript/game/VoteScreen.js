@@ -1,15 +1,18 @@
 // Between rounds: where does the parade go next? A handful of towns to pick from, a field to type another one in,
 // fifteen seconds on the clock. One vote per player, changeable until the clock runs out; the server keeps the
 // tally and sends it back after every vote.
+import { bindName } from "game/NameField"
+
 const KIND = { city: "stad", town: "stad", village: "dorp" }
 
 export class VoteScreen {
-  constructor(el, { onVote }) {
+  constructor(el, { onVote, onName }) {
     this.el = el
     this.kop = el.querySelector(".stem-kop")
     this.list = el.querySelector(".stem-lijst")
-    this.input = el.querySelector("input")
+    this.input = el.querySelector(".stem-plaats")
     this.klok = el.querySelector(".stem-klok")
+    this.naam = bindName(el.querySelector(".naam input"), onName)
     this.playerId = null
     this.list.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) onVote(b.dataset.name) })
     // typing must not drive the car or pick a vehicle: the keys stop here
@@ -26,6 +29,7 @@ export class VoteScreen {
   show(vote, playerId, round) {
     this.playerId = playerId
     this.kop.textContent = round ? `${round.result === "won" ? "Alaaf! De optocht kwam binnen in" : "De optocht liep vast in"} ${round.arena.name}` : "Vastelaovend in Limburg"
+    this.naam.refresh()
     this.update(vote)
     this.el.hidden = false
     setTimeout(() => this.input.focus(), 50)
@@ -40,7 +44,7 @@ export class VoteScreen {
   countdown(secs) { this.klok.textContent = `Nog ${secs} s` }
 
   hide() {
-    if (this.open) this.input.blur()
+    if (this.open) { this.input.blur(); this.naam.blur() }
     this.el.hidden = true
   }
 }

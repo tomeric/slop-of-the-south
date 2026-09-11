@@ -61,8 +61,9 @@
   <div class="stem-kop"></div>
   <h2>Waar gaat de optocht heen?</h2>
   <div class="stem-lijst"></div>
-  <input type="text" maxlength="40" placeholder="Of typ een plaats in Limburg en druk op Enter" autocomplete="off" spellcheck="false">
+  <input class="stem-plaats" type="text" maxlength="40" placeholder="Of typ een plaats in Limburg en druk op Enter" autocomplete="off" spellcheck="false">
   <div class="stem-klok"></div>
+  <label class="naam">Jouw naam <input type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Chauffeur"></label>
 </div>
 <%# the vehicle picker (Picker.js): three cards, over the loading screen between towns or on V during a round %>
 <div id="kiezer" hidden>
@@ -189,8 +190,11 @@
   .stem-lijst b { display: block; font-size: 18px; }
   .stem-lijst span { font-size: 12px; opacity: .7; }
   .stem-lijst em { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font: 700 18px/1 "Helvetica Neue", Helvetica, Arial, sans-serif; color: #f2c14e; }
-  #stemmen input { width: min(70vw, 460px); padding: 12px 16px; font: 16px "Helvetica Neue", Helvetica, Arial, sans-serif; color: #fff;
-                   background: rgba(255, 255, 255, .1); border: 2px solid rgba(255, 255, 255, .2); border-radius: 10px; outline: none; }
+  #stemmen .stem-plaats { width: min(70vw, 460px); padding: 12px 16px; font: 16px "Helvetica Neue", Helvetica, Arial, sans-serif; color: #fff;
+                          background: rgba(255, 255, 255, .1); border: 2px solid rgba(255, 255, 255, .2); border-radius: 10px; outline: none; }
   #stemmen input:focus { border-color: #f2c14e; }
+  #stemmen .naam { position: absolute; right: 8vw; bottom: 6vh; display: flex; align-items: center; gap: 10px; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; opacity: .9; }
+  #stemmen .naam input { width: 180px; padding: 6px 10px; font: 14px "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0; text-transform: none; color: #fff;
+                         background: rgba(255, 255, 255, .1); border: 2px solid rgba(255, 255, 255, .2); border-radius: 8px; outline: none; }
   .stem-klok { font-size: 15px; letter-spacing: .2em; text-transform: uppercase; opacity: .8; font-variant-numeric: tabular-nums; }
 </style>
