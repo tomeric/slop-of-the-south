@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { noOutline } from "game/Outline"
+import { drape } from "game/Drape"
 
 // Procedural roads. Tile entries carry ready-made 3D centrelines (RoadBuilder: smoothed, junction-pinned, seated in
 // the terrain) as pts [x, z, y] where y IS the road surface level; the terrain bed under a road is at that level and
@@ -53,9 +54,9 @@ function texture(name) {
 
 const materials = {}
 function material(name) {
-  return materials[name] ??= noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture(name), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1 }), { __shared: true }))
+  return materials[name] ??= noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture(name), roughness: 0.95 }), { __shared: true }))
 }
-const junctionMat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture("asphalt"), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -3 }), { __shared: true }))
+const junctionMat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ map: texture("asphalt"), roughness: 0.95 }), { __shared: true }))
 const concrete = Object.assign(new THREE.MeshStandardMaterial({ color: 0x9a9892, roughness: 0.9 }), { __shared: true })
 
 // which texture for a road: class, width, surface and whether the tile is built-up decide
@@ -80,23 +81,22 @@ export function buildRoads(roads, junctions, biome, terrainAt = null) {
   const add = (mat, geo) => { if (!byMat.has(mat)) byMat.set(mat, []); byMat.get(mat).push(geo) }
   for (const road of roads) {
     if (road.pts.length < 2) continue
-    add(material(styleOf(road, urban)), ribbon(road.pts, road.width / 2, LIFT, true, 0, null, terrainAt))
+    add(material(styleOf(road, urban)), ribbon(road.pts, road.width / 2, LIFT, 0, terrainAt))
     if (sidewalks(road, urban)) {
-      for (const side of [-1, 1]) add(material("pavers"), ribbon(road.pts, SIDEWALK / 2, LIFT + CURB, true, side * (road.width / 2 + SIDEWALK / 2), null, terrainAt))
+      for (const side of [-1, 1]) add(material("pavers"), ribbon(road.pts, SIDEWALK / 2, LIFT + CURB, side * (road.width / 2 + SIDEWALK / 2), terrainAt))
     }
     for (const span of bridgeRuns(road.pts)) {
-      for (const side of [-1, 1]) add(concrete, ribbon(span, 0.15, LIFT + 0.9, false, side * (road.width / 2 + 0.15), LIFT))
+      for (const side of [-1, 1]) add(concrete, wall(span, LIFT + 0.9, LIFT, side * (road.width / 2 + 0.15)))
       add(concrete, pillars(span, road, roads))
     }
   }
   for (const [x, z, y, r] of junctions ?? []) {
-    const g = new THREE.CircleGeometry(r, 16).toNonIndexed()
-    g.rotateX(-Math.PI / 2); g.translate(x, 0, z)
-    const pos = g.attributes.position                            // level with the ribbons, riding up over any terrain that pokes through
-    for (let i = 0; i < pos.count; i++) pos.setY(i, Math.max(y, terrainAt ? terrainAt(pos.getX(i), pos.getZ(i)) : y) + LIFT + 0.01)
-    g.deleteAttribute("normal")                 // ribbons carry position + uv only; normals are computed after merging
-    g.deleteAttribute("uv"); g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2).fill(0.5), 2))
-    add(junctionMat, g)
+    const tris = []
+    for (let i = 0; i < 16; i++) {                               // a fan, in 2D, with the junction's level on every vertex
+      const a = i / 16 * Math.PI * 2, b = (i + 1) / 16 * Math.PI * 2
+      tris.push([[x, z, 0.5, 0.5, y], [x + Math.cos(b) * r, z + Math.sin(b) * r, 0.5, 0.5, y], [x + Math.cos(a) * r, z + Math.sin(a) * r, 0.5, 0.5, y]])
+    }
+    add(junctionMat, toGeometry(drape(tris), LIFT + 0.01, terrainAt))
   }
   if (!byMat.size) return null
   const group = new THREE.Group()
@@ -109,13 +109,12 @@ export function buildRoads(roads, junctions, biome, terrainAt = null) {
   return group
 }
 
-// A flat ribbon along pts ([x, z, y]) of half-width hw, lifted by `lift`, shifted sideways by `offset` metres.
-// When `bottom` is given a vertical wall from bottom to lift is built instead (bridge parapets). With `ground`
-// (terrain height function) each edge vertex is raised to ROAD_LIFT above the highest terrain at the vertex and
-// halfway to its neighbours, so the bilinear terrain never pokes through the ribbon between two vertices.
-function ribbon(pts, hw, lift, textured, offset = 0, bottom = null, ground = null) {
-  const verts = [], uvs = [], idx = []
-  const edges = []                                            // [leftX, leftZ, rightX, rightZ] per point
+// A flat ribbon along pts ([x, z, y]) of half-width hw, shifted sideways by `offset` metres. It is built in 2D,
+// cut to the terrain grid (game/Drape.js) and only then lifted, so it sits a constant `lift` above the higher of
+// the road's own level and the ground under it and can never be pierced between two vertices. `wall` is the other
+// shape a road needs: a vertical strip for a bridge parapet, which follows the deck and is not draped.
+function edgesOf(pts, hw, offset) {
+  const edges = []
   for (let i = 0; i < pts.length; i++) {
     const [x, z] = pts[i]
     const [px, pz] = pts[Math.max(i - 1, 0)], [nx, nz] = pts[Math.min(i + 1, pts.length - 1)]
@@ -126,24 +125,48 @@ function ribbon(pts, hw, lift, textured, offset = 0, bottom = null, ground = nul
     const cx = x + lx * offset, cz = z + lz * offset
     edges.push([cx + lx * hw, cz + lz * hw, cx - lx * hw, cz - lz * hw, cx, cz])
   }
-  const floor = (i, k) => {                                   // highest terrain at edge vertex k (0 left, 2 right) of point i and towards its neighbours
-    const [ex, ez] = [edges[i][k], edges[i][k + 1]]
-    let t = ground(ex, ez)
-    for (const j of [i - 1, i + 1]) if (edges[j]) t = Math.max(t, ground((ex + edges[j][k]) / 2, (ez + edges[j][k + 1]) / 2))
-    return t
+  return edges
+}
+
+function ribbon(pts, hw, lift, offset = 0, terrainAt = null) {
+  const edges = edgesOf(pts, hw, offset)
+  const tris = []
+  let along = 0
+  for (let i = 1; i < pts.length; i++) {
+    const va = along
+    along += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+    const [alx, alz, arx, arz] = edges[i - 1], [blx, blz, brx, brz] = edges[i]
+    const ya = pts[i - 1][2], yb = pts[i][2]
+    const L0 = [alx, alz, 0, va / TEX_LEN, ya], R0 = [arx, arz, 1, va / TEX_LEN, ya]
+    const L1 = [blx, blz, 0, along / TEX_LEN, yb], R1 = [brx, brz, 1, along / TEX_LEN, yb]
+    tris.push([L0, L1, R0], [R0, L1, R1])
   }
+  return toGeometry(drape(tris), lift, terrainAt)
+}
+
+// draped triangles ([x, z, u, v, level]) → a geometry, every vertex lifted above whichever is higher
+function toGeometry(tris, lift, terrainAt) {
+  const pos = [], uv = []
+  for (const t of tris) for (const v of t) {
+    pos.push(v[0], (terrainAt ? Math.max(v[4], terrainAt(v[0], v[1])) : v[4]) + lift, v[1])
+    uv.push(v[2], v[3])
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2))
+  return g
+}
+
+// a vertical strip along the (offset) centre line, from `bottom` to `top` above the road level: bridge parapets
+function wall(pts, top, bottom, offset) {
+  const edges = edgesOf(pts, 0, offset)
+  const verts = [], uvs = [], idx = []
   let along = 0
   for (let i = 0; i < pts.length; i++) {
     const y = pts[i][2]
-    if (i > 0) along += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][2] - pts[i - 1][2])
-    const [lxp, lzp, rxp, rzp, cx, cz] = edges[i]
-    if (bottom === null) {
-      const yl = ground ? Math.max(y + lift, floor(i, 0) + LIFT) : y + lift
-      const yr = ground ? Math.max(y + lift, floor(i, 2) + LIFT) : y + lift
-      verts.push(lxp, yl, lzp, rxp, yr, rzp)
-    } else {
-      verts.push(cx, y + bottom, cz, cx, y + lift, cz)
-    }
+    if (i > 0) along += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+    const [, , , , cx, cz] = edges[i]
+    verts.push(cx, y + bottom, cz, cx, y + top, cz)
     uvs.push(0, along / TEX_LEN, 1, along / TEX_LEN)
     if (i > 0) { const a = 2 * (i - 1); idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
   }
