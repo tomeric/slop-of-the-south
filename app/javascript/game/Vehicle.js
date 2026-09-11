@@ -12,12 +12,13 @@ import { makeVehicleMesh } from "game/Vehicles"
 // the nitro meter; road pads refill it. The frame runs integrate() (input → speed, heading, position), lets Combat
 // push the car out of whatever it hit, then settle() (suspension: terrain contact and body attitude). The vehicle
 // spec (Vehicles.js) sets the size, the physics constants and the mesh; setSpec swaps all of it in place.
-// The car can leave the ground: over a crest at speed, when the ground falls away faster than gravity could bring
-// the car down, or on the monster truck's jump. In the air it keeps its velocity, throttle and steering do next to
-// nothing, the nose follows the arc, and the landing compresses the suspension.
+// The car can leave the ground, arcade style: fast over a crest (it was climbing, now the ground descends) or off a
+// ledge, it launches with the recent climb rate scaled up plus a pop that grows with speed; the monster truck jumps
+// on command. In the air it keeps its velocity, throttle and steering do next to nothing, the nose follows the arc,
+// and the landing compresses the suspension.
 const SUBSTEP = 1 / 120
-const GRAVITY = 12                   // m/s²: heavier than Earth, so hops stay snappy
-const TAKEOFF = 0.06                 // metres the ground must drop below the ballistic path in one frame to launch
+const GRAVITY = 10                   // m/s²: a touch lighter than Earth, for hang time
+const JUMP = { minSpeed: 10, climb: 0.8, ledge: 0.3, gain: 1.8, pop: 0.08 }   // m/s of climb a crest needs, m of step, ×climb, ×speed
 
 export class Vehicle {
   constructor(spawn, spec) {
@@ -75,7 +76,7 @@ export class Vehicle {
     this.boosting = false; this.burstT = 0; this.boostPower = 0
     this.accLong = 0; this.accLat = 0; this.wheelAngle = 0
     this.vy = null; this.airY = 0; this.landed = false                 // airborne: vertical speed and height, null on the ground
-    this.groundVy = 0; this.landImpact = 0                              // how fast the ground rises under the car; the last landing's speed
+    this.groundVy = 0; this.climbMax = 0; this.landImpact = 0           // how fast the ground rises under the car (smoothed), its recent peak, the last landing's speed
     this.kickX = 0; this.kickZ = 0                                      // knockback, world m/s, dies away in a second
     this._dt = 1 / 60; this._speedOut = 0
     this.susp.reset()
@@ -210,21 +211,26 @@ export class Vehicle {
     const dt = this._dt, prevY = this.y
     this.susp.update(this, heightAt, dt)
     if (this.vy === null) {
-      const groundVy = (this.y - prevY) / dt
-      const predicted = prevY + this.groundVy * dt - 0.5 * GRAVITY * dt * dt
-      if (Math.abs(this.y - prevY) < 5 && Math.hypot(this.vx, this.vz) > 6 && this.y < predicted - TAKEOFF) {
-        this.vy = Math.max(0, this.groundVy); this.airY = predicted
+      const inst = (this.y - prevY) / dt, hspeed = Math.hypot(this.vx, this.vz), step = prevY - this.y
+      const crest = inst < -0.2 && this.climbMax > JUMP.climb
+      if (step < 5 && hspeed > JUMP.minSpeed && (crest || step > JUMP.ledge)) {
+        this.vy = (crest ? this.climbMax : 0) * JUMP.gain + JUMP.pop * hspeed
+        this.airY = prevY
+        this.climbMax = 0
+      } else {
+        this.groundVy = expDamp(this.groundVy, inst, 8, dt)                          // a curb is one frame of spike: it barely registers
+        if (inst > 0.05) this.climbMax = Math.max(this.climbMax, Math.min(this.groundVy, 5))   // the steepest part of the hill decides the jump
+        else this.climbMax *= 1 - 1.5 * dt                                             // and fades on a plateau
       }
-      this.groundVy = expDamp(this.groundVy, groundVy, 30, dt)
       return
     }
     if (this.airY <= this.y && this.vy < 0) {
-      this.landImpact = -this.vy; this.vy = null; this.landed = true; this.groundVy = 0
+      this.landImpact = -this.vy; this.vy = null; this.landed = true; this.groundVy = this.climbMax = 0
       this.susp.hv = Math.min(this.susp.hv, -this.landImpact * 0.6)                   // the springs take the hit
       return
     }
     this.mesh.position.y += this.airY - this.y
-    this.mesh.rotation.x = Math.atan2(this.vy, Math.max(4, Math.hypot(this.vx, this.vz))) * 0.6
+    this.mesh.rotation.x = Math.atan2(this.vy, Math.max(4, Math.hypot(this.vx, this.vz))) * 0.9
   }
 
   get smoking() { return this.drifting && Math.abs(this.slip) > T.fx.smokeSlip }
