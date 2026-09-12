@@ -83,6 +83,23 @@ export const TUNING = {
     minWidth: 2.0, minHeight: 2.4,            // walls smaller than this get plain brick instead of a window
     lit: 0.42,                                // how brightly the windows burn at night (live)
     detail: { on: true, cell: 125, radius: 1 },   // plinths, gutters, sills and doors, streamed 3x3 cells around the car
+    // The houses near enough to look into are not a shell with windows painted on it but a stack of pieces: panels
+    // with real openings and thickness, floors, partitions and roof (game/Structure.js). `radius` is the whole cost.
+    structure: {
+      on: true, radius: 80, keep: 1.25, perFrame: 1, budgetMs: 5,
+      maxBuildings: 48,       // the hard cap: past it the nearest win and the rest keep their shell (draw calls)
+      thick: 0.25,            // the outer leaf, extruded inwards: the surveyed silhouette does not move
+      reveal: 0.12,           // how far the glass sits behind the outer face
+      minPiece: 0.5,          // a face smaller than this either way is not worth cutting up
+      minArea: 0.35,          // m²: a cell smaller than this is dropped rather than made a piece of
+      tilt: 0.26,             // |n.y| over this and a face labelled "wall" is a horizontal sliver: skip it
+      panel: 3.2,             // metres: how big a piece of roof is
+      roofThick: 0.16,
+      interior: true,         // floors, partitions, doorways and stairs (reload: they are baked into the pieces)
+      floorThick: 0.22, slabs: 6,        // slabs: roughly how many pieces one floor is cut into
+      partThick: 0.1, partStep: 2.5, doorWide: 1.0,
+      stairs: true, stairWide: 1.0, stairLong: 3.2,
+    },
   },
   // The rigid-body world (game/Physics.js). `on` is a boot setting — ?fysica=0 never even downloads the engine —
   // and everything under it is live. Gravity is heavier than the real thing on purpose: debris that falls at 9.8

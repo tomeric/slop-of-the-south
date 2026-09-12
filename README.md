@@ -155,6 +155,8 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Outline.js          the cartoon outline pass, and who opts out of it
     game/Shadows.js          the sun's shadow box, hung on the camera and snapped to whole texels (?schaduw)
     game/Physics.js          the rigid-body world: terrain colliders, the debris pool, the car as a kinematic box
+    game/Structure.js        one building → pieces: panels with real openings, floors, partitions, stairs, roof
+    game/Structures.js       which houses are built rather than painted, and the swap between the two
     game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
     game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
     game/Bridges.js          decks with a fascia and a soffit, parapets, railings, abutments and piers
@@ -344,6 +346,25 @@ faces by hand where their material is made, and every instanced mesh (trees, gra
 built, because the addon offsets the hull with the model-view matrix alone and would place an instance's outline
 wrongly. In the densest village that costs +80 draw calls and +0.27 M triangles on 578 / 2.36 M. `slop.tuning.light.outline.on`
 turns it off live.
+
+**Built houses** (`game/Structure.js`, `game/Structures.js`): inside `T.buildings.structure.radius` a building stops
+being a shell with windows painted on it and becomes a stack of pieces — wall panels with real openings and 25 cm of
+thickness, a floor slab per storey, partition walls with doorways, a flight of stairs, and the roof cut into panels.
+Its shell's vertices are copied out and collapsed, the pieces go up in their place, and driving away puts the shell
+back; a few buildings are converted per frame, nearest first, under a millisecond budget.
+
+The grid is the shell's grid, which is the whole trick: bays from `bayCount`, storeys from `storeyCount` (BAG's own
+count where it has one), and the opening punched at exactly the rectangle the facade texture paints its glass into,
+so the swap does not move a window. Every cell of that grid is cut out by clipping the face's *triangles* against it
+— triangles, because Sutherland–Hodgman is only exact on a convex subject and an L-shaped wall face comes back as a
+bow tie that a triangle fan then draws as a spike out the side of the house. A gable's slope, a pentagon and a jog
+all fall out of the same clip with no special case, and only a cell that survives whole gets a window. The outline
+of the face is recovered by cancelling the edges that appear twice, which both gives each piece its sides and stops
+a seam appearing wherever two cells meet.
+
+Cost at the densest village tile: 37 buildings, ~6 600 pieces, 204 k triangles, about 2 ms to convert a house.
+Draw calls are the weak point — one mesh per material per building, +175 on a 790 baseline — which is what
+`maxBuildings` caps until the pieces move into one shared buffer per material.
 
 **Physics** (`game/Physics.js`): a Rapier world — Rust compiled to WebAssembly, vendored as one file the way three
 is — carries everything that falls. Each tile hands it a 51 × 51 heightfield collider (transposed on the way in:

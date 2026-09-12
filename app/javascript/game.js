@@ -9,6 +9,7 @@ import { Environment } from "game/Environment"
 import { Shadows } from "game/Shadows"
 import { Physics } from "game/Physics"
 import { Facades } from "game/Facades"
+import { Structures } from "game/Structures"
 import { updateWater, updateGround } from "game/Cover"
 import { Scatter } from "game/Scatter"
 import { Vehicle } from "game/Vehicle"
@@ -82,7 +83,7 @@ async function main() {
   const pickups = new Pickups()                             // boost pads, placed per tile from its roads
   const scatter = new Scatter(world.scene, effects, { heightAt: (x, z) => chunks.heightAt(x, z), tileIndex: (x, z) => chunks.tileIndex(x, z) })   // grass, bushes and reeds
   const physics = new Physics(world.scene, null)            // the rigid-body world; `chunks` is set just below
-  const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t); physics.addTile(t) }, onDrop: (t) => { index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t); physics.dropTile(t) } })
+  const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t); physics.addTile(t) }, onDrop: (t) => { structures.dropTile(t); index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t); physics.dropTile(t) } })
   physics.chunks = chunks
   effects.physics = physics
   if (TUNING.physics.on) physics.boot().then(() => physics.setCar(car.mesh)).catch((e) => console.warn("fysica:", e))
@@ -98,6 +99,7 @@ async function main() {
   const environment = new Environment(world)                // the ambient light, baked from the sky every couple of seconds
   const shadows = new Shadows(world)                        // the sun's shadow box, hung on the camera (?schaduw)
   const facades = new Facades(world.scene, index, chunks)   // plinths, sills, gutters and doors on the houses nearby
+  const structures = new Structures(world.scene, index, chunks)   // and, nearer still, the houses built out of pieces
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
   const music   = new Music(el("muziek"))
@@ -151,7 +153,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, shadows, facades, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, shadows, facades, structures, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"
@@ -209,6 +211,7 @@ async function main() {
     updateGround()
     scatter.update(dt, timer.getElapsed(), car)
     facades.update(car)
+    structures.update(car)
     if (input.toggleMap) minimap.toggle()
     if (input.mute) round.flash(music.toggle() ? "Muziek uit" : "Muziek aan")
     if (vrij) { const step = input.timeStep; if (step) dayNight.stepHours(step) }

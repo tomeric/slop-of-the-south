@@ -28,6 +28,13 @@ const X_AXIS = new THREE.Vector3(1, 0, 0)
 // hangs a sill under each of them, and the structure generator punches the hole. Derive it in one place or the three
 // drift and a sill ends up under a brick pier. `n` is what BAG counted (tile field `n`, b3_bouwlagen); without it we
 // fall back to the wall height, which is what every tile built before that field existed carries.
+// The colour the shell gave this building. game/Structure.js needs it so a house that swaps from painted to built
+// keeps the brick it had; the per-face jitter stays with the shell, since a piece is not a face.
+export function buildingPalette(id, roof) {
+  const h = hash(id), flat = roof === "horizontal"
+  return { h, flat, wall: WALLS[h % WALLS.length], roof: flat ? FLAT[h % FLAT.length] : PITCHED[(h >> 3) % PITCHED.length] }
+}
+
 export const bayCount = (width) => Math.max(1, Math.round(width / T.buildings.bay))
 export const storeyCount = (wallH, n) => (n > 0 ? n : Math.max(1, Math.round(wallH / T.buildings.storey)))
 
@@ -145,7 +152,7 @@ export function buildBuildingMeshes(meshes, reg) {
       for (const [name, p] of buckets) { const start = at[name] ?? 0, count = p.pos.length / 3 - start; if (count) parts.push({ name, start, count }) }
       if (parts.length) {
         const rings = b.fp ?? [hullXZ(xz)]
-        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, storeys, h: top - oy, max: buildingHp(rings), parts })
+        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, storeys, src: T.buildings.structure.on ? packFaces(b) : null, h: top - oy, max: buildingHp(rings), parts })
       }
     }
   }
@@ -162,10 +169,49 @@ export function buildBuildingMeshes(meshes, reg) {
     group.add(new THREE.Mesh(geo, buildingMaterial(name)))
   }
   // a building's vertices are contiguous inside each bucket, so its handle is a short list of ranges
+  // `remove` is destructive — collapseRange overwrites the vertices in place — so hiding for a structure keeps a
+  // copy first. It is a couple of kilobytes per building and only the handful near the car ever pay it.
+  const saved = new Map()
   for (const handle of handles) reg(handle.key, { ...handle,
     remove: () => { for (const p of handle.parts) collapseRange(geos.get(p.name).attributes.position, p.start, p.count) },
-    tint: (k) => { for (const p of handle.parts) scaleRange(geos.get(p.name).attributes.color, p.start, p.count, k) } })
+    tint: (k) => { for (const p of handle.parts) scaleRange(geos.get(p.name).attributes.color, p.start, p.count, k) },
+    hide: () => {
+      if (saved.has(handle.key)) return
+      const copy = handle.parts.map((p) => geos.get(p.name).attributes.position.array.slice(p.start * 3, (p.start + p.count) * 3))
+      saved.set(handle.key, copy)
+      for (const p of handle.parts) collapseRange(geos.get(p.name).attributes.position, p.start, p.count)
+    },
+    show: () => {
+      const copy = saved.get(handle.key)
+      if (!copy) return
+      saved.delete(handle.key)
+      handle.parts.forEach((p, i) => {
+        const attr = geos.get(p.name).attributes.position
+        attr.array.set(copy[i], p.start * 3)
+        attr.addUpdateRange(p.start * 3, p.count * 3)
+        attr.needsUpdate = true
+      })
+    } })
   return group
+}
+
+// The faces again, packed small, because ChunkManager throws the tile JSON away the moment this function returns
+// and game/Structure.js needs the shape to cut a building into pieces. Verbatim centimetre offsets from `o`, outer
+// rings only (no face in the whole province has ever had a hole ring), so the grid it derives is bit-identical to
+// the one the shell drew: a dense tile costs 1.5 MB rather than the 8 MB the parsed arrays hold.
+function packFaces(b) {
+  let n = 0
+  for (const face of b.f) n += (face[1]?.length ?? 0) / 3 | 0
+  const lab = new Uint8Array(b.f.length), off = new Uint32Array(b.f.length + 1), xyz = new Int32Array(n * 3)
+  let at = 0
+  for (let i = 0; i < b.f.length; i++) {
+    const ring = b.f[i][1]
+    lab[i] = b.f[i][0]
+    off[i] = at
+    if (ring) for (let k = 0; k + 2 < ring.length; k += 3) { xyz[at * 3] = ring[k]; xyz[at * 3 + 1] = ring[k + 1]; xyz[at * 3 + 2] = ring[k + 2]; at++ }
+  }
+  off[b.f.length] = at
+  return { o: b.o, roof: b.roof, n: b.n, lab, off, xyz }
 }
 
 // Newell's method: robust polygon normal for concave / slightly non-planar rings

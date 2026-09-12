@@ -110,14 +110,30 @@ export class Facades {
       group.add(new THREE.Mesh(geo, materials[b]))
     }
     if (group.children.length) { casts(group); this.scene.add(group) }
-    // each building's own slice of each merged geometry, so its detail goes down with it (Destructibles calls this)
+    // Each building's own slice of each merged geometry. `remove` is for a building coming down and is one way;
+    // `hide`/`show` are for a building handing its place over to the structure built out of it (game/Structures.js),
+    // which comes back, so those keep a copy of what they collapsed.
     for (let i = 0; i < buildings.length; i++) {
       const at = buildings[i].detail, next = buildings[i + 1]?.detail
-      buildings[i].detail = () => {
-        for (const b of BUCKETS) {
-          const end = next ? next[b] : parts[b].length
-          if (geos[b] && end > at[b]) collapseRange(geos[b].attributes.position, at[b] * 3, (end - at[b]) * 3)
-        }
+      const ranges = BUCKETS.map((b) => [b, at[b] * 3, ((next ? next[b] : parts[b].length) - at[b]) * 3]).filter(([b, , n]) => geos[b] && n > 0)
+      let saved = null
+      buildings[i].detail = {
+        remove: () => { for (const [b, start, count] of ranges) collapseRange(geos[b].attributes.position, start, count) },
+        hide: () => {
+          if (saved) return
+          saved = ranges.map(([b, start, count]) => geos[b].attributes.position.array.slice(start * 3, (start + count) * 3))
+          for (const [b, start, count] of ranges) collapseRange(geos[b].attributes.position, start, count)
+        },
+        show: () => {
+          if (!saved) return
+          ranges.forEach(([b, start, count], k) => {
+            const attr = geos[b].attributes.position
+            attr.array.set(saved[k], start * 3)
+            attr.addUpdateRange(start * 3, count * 3)
+            attr.needsUpdate = true
+          })
+          saved = null
+        },
       }
     }
     this.cells.set(key, { group, buildings })

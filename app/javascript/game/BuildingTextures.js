@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { TUNING as T } from "game/Tuning"
-import { texture, bricks, grain, speckle, grey, rng } from "game/Textures"
+import { texture, bricks, grain, speckle, cracks, grey, rng } from "game/Textures"
+import { noOutline } from "game/Outline"
 
 // What the buildings are made of. Four maps, all drawn once: plain brick and plaster for the walls that are too
 // small or too odd to carry a window, pantiles and bitumen for the roofs, and the facade — one canvas holding
@@ -128,12 +129,25 @@ const DRAW = {
     ctx.fillStyle = "rgba(0,0,0,.25)"
     for (let y = 0; y < size; y += size / 4) ctx.fillRect(0, y, size, 2)
   },
+  // the inside of a wall, and the underside of a floor: plaster, near enough flat, with the roller marks in it
+  pleister: () => (ctx, size) => {
+    const rnd = rng(26)
+    speckle(ctx, size, 205, 14, 2200, 4, rnd)
+    grain(ctx, size, 200, 22, 900, 9, rnd, 0.25)
+  },
+  // a bare floor slab, seen from above once the roof is off
+  beton: () => (ctx, size) => {
+    const rnd = rng(27)
+    speckle(ctx, size, 168, 22, 5000, 3, rnd)
+    cracks(ctx, size, 6, 120, rnd)
+  },
 }
 
-const METRES = { steen: 2.4, pannen: 2.0, bitumen: 3.0 }
+const METRES = { steen: 2.4, pannen: 2.0, bitumen: 3.0, pleister: 2.0, beton: 2.5 }
 
 // ---- materials ------------------------------------------------------------------------------------------------
 
+const STRUCTURE = new Set([ "pleister", "beton" ])     // built by game/Structure.js, and wound correctly
 const materials = new Map()
 const lit = []                                        // the facade materials, dimmed and lit by setBuildingsNight
 
@@ -161,10 +175,21 @@ export function buildingMaterial(name) {
       ...(on && { emissive: 0xffffff, emissiveMap: licht, emissiveIntensity: 0 }),
     })
     if (on) lit.push(m)
+  } else if (name === "glas") {
+    // the one surface with no texture on it: what you see is the sky the environment map is carrying, and after dark
+    // the light behind it. Punching a real hole takes the painted window (and its glow) out of the facade map, so
+    // this joins the `lit` list in its place.
+    m = new THREE.MeshStandardMaterial({ color: 0x8fa7b8, vertexColors: true, roughness: 0.08, metalness: 0.5,
+      emissive: 0xffca6e, emissiveIntensity: 0 })
+    lit.push(m)
   } else {
-    m = new THREE.MeshStandardMaterial({ map: texture(METRES[name], DRAW[name]()), vertexColors: true, roughness: 0.92, side: THREE.DoubleSide })
+    m = new THREE.MeshStandardMaterial({ map: texture(METRES[name], DRAW[name]()), vertexColors: true, roughness: 0.92,
+      side: STRUCTURE.has(name) ? THREE.FrontSide : THREE.DoubleSide })   // a built wall has two real sides; a shell has one
   }
   m.__shared = true
+  // the structure is hundreds of small pieces per house: an inverted hull round every one of them is a scribble,
+  // and it would draw a quarter of a million triangles twice
+  if (STRUCTURE.has(name) || name === "glas") noOutline(m)
   materials.set(name, m)
   return m
 }
