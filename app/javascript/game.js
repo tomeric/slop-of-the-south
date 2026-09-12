@@ -129,7 +129,10 @@ async function main() {
     world.scene.remove(car.setSpec(spec)); world.scene.add(car.mesh)
     carFx = new VehicleFx(car.mesh, effects.smoke)
     physics.setVehicle(car.spec, car.mesh)
-    physics.warp(car.x, car.y, car.z, car.yaw)
+    // A new chassis comes with its springs at full length, so setting it down at the height the *old* car was
+    // resting at buries its wheels in the road and the suspension answers that with an impulse big enough to turn
+    // the solver to NaN. Drop it in from a little above the ground instead, the way a teleport does.
+    putDown(car.x, car.z, car.yaw)
     localStorage.setItem("voertuig", spec.id)
     voertuigEl.textContent = spec.naam; hintEl.textContent = spec.ability.hint
     placed = false
