@@ -252,7 +252,7 @@ async function main() {
       combat.enabled = vrij || round.running
       combat.collide(car, dt, input)
       combat.abilities(car, input, dt)
-      carFx.update(car, dt)
+      carFx.update(car, dt)   // reads car.smoking / boostPower / thrusting
       pickups.collect(car, tileIndex, onPickup)
       scatter.flatten(car)
     }

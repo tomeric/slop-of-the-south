@@ -21,7 +21,7 @@ import { makeVehicleMesh } from "game/Vehicles"
 // levels, the mini-turbo payout and the nitro meter. Those read the real slip angle now, but the numbers are the
 // ones that were tuned.
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, "YXZ"), _v = new THREE.Vector3()
-const _up = new THREE.Vector3(0, 1, 0)
+const _up = new THREE.Vector3(0, 1, 0), _upWorld = new THREE.Vector3(0, 1, 0)
 
 export class Vehicle {
   constructor(spawn, spec, physics) {
@@ -31,6 +31,7 @@ export class Vehicle {
     this.wheelWorld = []          // [{x, y, z}] ground contact of each wheel, filled by the suspension
     this.boostMeter = 0.5         // survives resets
     this.st = {}                  // what physics.read fills in: pose, velocity, wheels down
+    this.quat = new THREE.Quaternion()   // the chassis pose, kept between the two halves of the frame
     // two spotlights for the player's own car light up the road ahead at night
     this.spots = [-0.6, 0.6].map((x) => {
       const spot = new THREE.SpotLight(0xfff3d6, 0, 65, 0.5, 0.65, 1.7)
@@ -91,6 +92,7 @@ export class Vehicle {
     this.pitch = 0; this.roll = 0
     this.speed = 0; this.lateral = 0; this.vx = 0; this.vz = 0; this.vy = 0; this.yawRate = 0
     this.groundY = y
+    this.quat?.setFromAxisAngle(_upWorld, yaw)
     this.physics?.warp(x, y, z, yaw)
     this.susp?.reset()
   }
@@ -123,6 +125,9 @@ export class Vehicle {
     if (!P?.ctrl) return
     const D = T.drift
     P.clearForces()                                          // last frame's drag, or it piles up
+    // the same hysteresis the boost has, or an empty meter flickers: refill a frame, thrust a frame, forever
+    this.wantThrust = this.spec.ability?.kind === "thrust" && !!input.thrust &&
+      (this.thrusting ? this.boostMeter > 0 : this.boostMeter > T.boost.reengage)
     this.updateBoost(dt, input)
     const v = this.speed, av = Math.abs(v)
 
@@ -159,10 +164,41 @@ export class Vehicle {
     const grip = (this.spec.grip ?? 1) * T.physics.car.frictionSlip
     const rear = input.handbrake && av > D.minSpeed ? grip * T.physics.car.handbrakeSlip : grip
 
+    this.thrusters(dt, input)
     P.drive({ engine, brake, steer: this.steer, slip: grip, rearSlip: rear })
 
     const braking = (input.brake && v > 0.5) || (input.handbrake && av > 0.5)
     if (braking !== this.braking) { this.braking = braking; this.updateTail() }
+  }
+
+  // Four thrusters under the chassis rail, held down rather than fired. They push along the body's own up axis at
+  // four separate mounting points, which is the whole character of the thing: level, they lift; tilted, they shove
+  // you sideways and roll you further over, so a bad landing can be saved or made much worse.
+  //
+  // The force has to taper, or it is a rocket rather than a jump: flat thrust at 1.7 times its own weight leaves
+  // 11 m/s² of net climb, and six seconds of that is most of a kilometre. Tapering with the *climb rate* to exactly
+  // hover force is no better — hover means zero net acceleration, so it settles into a constant 12 m/s ascent and
+  // was measured ninety metres up. What gives a jump is a spring to a height: full thrust on the ground, nothing
+  // left by `height`, and a damping term against the climb so it arrives rather than bounces. Hands off and it
+  // falls; hold it and it sits at about `height × (1 − 1/ratio)` off the deck for as long as the meter lasts.
+  thrusters(dt, input) {
+    const spec = this.spec
+    this.thrusting = false
+    if (!this.wantThrust) return
+    const TH = T.physics.thrust, b = spec.body
+    this.boostMeter = Math.max(0, this.boostMeter - dt * TH.drainScale / T.boost.drainTime)
+    this.thrusting = true
+
+    _up.set(0, 1, 0).applyQuaternion(this.quat)               // the body's own up, not the world's
+    const hover = this.mass * Math.abs(T.physics.gravity)
+    const high = Math.max(0, this.y - (this.groundY ?? this.y))
+    const lift = TH.ratio * Math.max(0, 1 - high / TH.height)
+    const damp = TH.damp * Math.max(0, (this.vy ?? 0)) / TH.vMax
+    const F = hover * Math.max(0, lift - damp) / 4
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      _v.set(sx * b.hx * TH.spread, b.y - b.hy, b.z + sz * b.hz * TH.spread).applyQuaternion(this.quat)
+      this.physics.forceAt(_up.x * F, _up.y * F, _up.z * F, this.x + _v.x, this.y + _v.y, this.z + _v.z)
+    }
   }
 
   // ---- half two: where the solver put it --------------------------------------------------------------------
@@ -172,8 +208,8 @@ export class Vehicle {
     if (!P?.ctrl) return
     const st = P.read(this.st)
     this.x = st.x; this.y = st.y; this.z = st.z
-    _q.set(st.qx, st.qy, st.qz, st.qw)
-    _e.setFromQuaternion(_q)
+    this.quat.set(st.qx, st.qy, st.qz, st.qw)
+    _e.setFromQuaternion(this.quat)
     this.yaw = _e.y; this.pitch = _e.x; this.roll = _e.z
     this.yawRate = st.wy
 
@@ -195,7 +231,7 @@ export class Vehicle {
     this.wasDown = down
 
     this.drift(dt)
-    this.susp.update(this, _q, dt)
+    this.susp.update(this, this.quat, dt)
   }
 
   // The drift state machine and its mini-turbo, kept as it was tuned — but reading the slip angle the tyres are
@@ -235,7 +271,8 @@ export class Vehicle {
     if (wantHold) this.boostMeter = Math.max(0, this.boostMeter - h / B.drainTime)
     if (this.burstT > 0) this.burstT -= h
     this.boosting = wantHold || this.burstT > 0
-    if (!this.boosting) this.boostMeter = Math.min(1, this.boostMeter + h / B.refillTime)
+    // the thrusters spend the same meter, so it must not trickle back up underneath them
+    if (!this.boosting && !this.wantThrust) this.boostMeter = Math.min(1, this.boostMeter + h / B.refillTime)
     this.boostPower = expDamp(this.boostPower, this.boosting ? 1 : 0, B.powerSmooth, h)
   }
 

@@ -22,7 +22,7 @@ export const VEHICLES = [
     mass: 4000, com: 1.15, grip: 1.0, bite: 0.4,
     body: { hx: 0.95, hy: 0.75, hz: 2.1, y: 1.9, z: 0.1 },
     smashMin: 6, smashPanels: 4, smashLoss: 0.7,
-    ability: { kind: "jump", cooldown: 2.5, hint: "E springen" } },
+    ability: { kind: "thrust", cooldown: 0, hint: "E stuwraketten (ingedrukt houden)" } },
   { id: "bulldozer", naam: "Bulldozer", blurb: "Traag, maar ramt op snelheid dwars door alles heen en veegt puin in één keer weg. Het blad op en neer beukt een huis extra.",
     maxSpeed: 12, accel: 5, brakeForce: 14, maxSteer: 0.6, wheelbase: 3.2, track: 2.4, length: 5.5,
     ram: 3.0, side: 1, clear: 50, push: true, pushMin: 2, cam: { dist: 1.3, height: 1.3 },

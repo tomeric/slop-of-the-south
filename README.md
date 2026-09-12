@@ -508,6 +508,14 @@ the world is looked at while working on how it looks.
   and give a short kick; they come back after 20 s (locally).
 - **Suspension**: no longer faked. Dive, squat, roll, a wheel dropping into a gutter and landing on your roof are
   all consequences of the springs the solver is integrating. **Q** puts you back on your wheels where you stand.
+- **Thrusters** (monster truck): hold **E** and four jets under the chassis rail push along the body's own up axis,
+  spending the nitro meter at half the rate boost does — six seconds on a full one. They are a spring to a height
+  rather than a rocket: full thrust on the deck, nothing left by `thrust.height`, and a damping term against the
+  climb, so it lifts to about nine metres, hovers there while the meter lasts and settles back down. Because the
+  four jets push along the *body's* up at four separate points, a truck that is already tilted gets shoved sideways
+  and rolled further — a bad landing can be saved or made a great deal worse. The old arcade jump, and the crest
+  heuristic that guessed when a hill had thrown you, are both gone: you are in the air when no wheel is touching
+  anything.
 - **Camera**: critically damped springs for position, aim and yaw; at speed it sits behind the velocity rather than the
   nose so a drift is visible; distance, height and field of view grow with speed and boost; it never sinks below the
   ground.

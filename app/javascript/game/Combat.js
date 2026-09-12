@@ -9,7 +9,7 @@ import { TUNING as T, euro } from "game/Tuning"
 // (Destructibles.apply), and `fire` tells the other players what to draw. Explosions also shove nearby cars.
 const STEP = 1.5                     // metres a shot may travel between hit tests
 const MISSILE = { speed: 60, life: 3, r: 6, dmg: 70 }
-const JUMP = { v: 9, r: 4, dmg: 90 }
+const JUMP = { r: 4, dmg: 90 }          // what a hard landing crushes under the monster truck
 const BLADE = { lift: 0.35, tilt: 0.32, rate: 2.5, slam: 150, reach: 2.2 }   // the arms rise and pivot up (rad), per second, damage on the way
 const shotMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d0, metalness: 0.5, roughness: 0.4 })
 const noseMat = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.5 })
@@ -174,16 +174,15 @@ export class Combat {
     this.cd = Math.max(0, this.cd - dt)
     if (car.landed) {                                                                       // a hop off a hill puffs dust; the monster truck's hard landings crush
       car.landed = false
-      if (car.spec.ability.kind === "jump" && car.landImpact > 4) this.explode(car.x, car.y + 0.5, car.z, JUMP.r, JUMP.dmg, true, false)
+      if (car.spec.ability.kind === "thrust" && car.landImpact > 4) this.explode(car.x, car.y + 0.5, car.z, JUMP.r, JUMP.dmg, true, false)
       else if (car.landImpact > 2) this.effects.dust(car.x, car.y + 0.4, car.z, 1 + car.landImpact * 0.3)
       this.effects.shake(Math.min(0.6, car.landImpact / 12))
     }
     this.moveBlades(dt)
     const a = car.spec.ability
-    if (a.kind === "none" || !input.ability || this.cd > 0) return
+    if (a.kind === "none" || a.kind === "thrust" || !input.ability || this.cd > 0) return
     switch (a.kind) {
       case "missile": { const f = car.forward(), rx = -f.z, rz = f.x, n = car.spec.length / 2 + 0.8; this.shoot(car.x + f.x * n + rx * 0.55, car.y + 1.05, car.z + f.z * n + rz * 0.55, f, true); break }
-      case "jump":    if (car.airborne) return; car.jump(JUMP.v); break
       case "blade":   this.toggleBlade(car.mesh, true); break
     }
     this.cd = a.cooldown

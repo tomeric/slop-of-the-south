@@ -130,6 +130,10 @@ export const TUNING = {
       angularDamping: 0.5, hullFriction: 0.4, contactForce: 2000,
       maxFall: 14, floorDrop: 6, dropIn: 0.4,   // dropIn: how far above the ground a teleport puts the car down
     },
+    // The monster truck's thrusters: held down, not fired. `ratio` is thrust to weight at a standstill, tapering to
+    // exactly hover as the climb reaches `vMax` — flat thrust would be a rocket, not a jump. `drainScale` is the
+    // share of the boost meter's drain rate, so a full meter is six seconds of flight rather than three.
+    thrust: { ratio: 1.7, height: 18, damp: 0.8, vMax: 12, drainScale: 0.5, spread: 0.72 },
     chips: { pool: 220, size: 0.5, speed: 7, life: 30 },   // pool: reload (the bodies are made once)
     pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5 },   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points
