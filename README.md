@@ -443,6 +443,15 @@ stop a held key firing once a frame. Hold E on the trike and the rockets keep co
 of a second apart — and the bar under the speedometer reads empty when you cannot afford the next one, because
 that, not the timer, is what is stopping you.
 
+**Two grades of rubbish.** The coarse grade is what a wall actually comes apart into — the tetromino lumps, big
+shards, lengths of timber — and it is what the parade stops for. The fine grade is `chips.fineScale` of that size
+and is what is left once somebody has been through the coarse stuff: the float drives straight over it, and it is
+never reported as an obstacle at all. Both grades live in the same pool and the same instanced mesh, so this costs
+no draw calls; `chips.coarseShare` is the split. Breaking a wall gives coarse debris and nothing else; putting a
+rocket into what has already fallen turns those lumps into the fine grade. A bulldozer's blade does not care which
+is which — measured driving through a pile of both, **nothing of either grade is left inside the swath**, lumps
+included.
+
 **Rubbish in the road.** Debris that comes to rest on the parade route is something the float has to get past.
 Each client reports where its own pieces settled — only ahead of the float, only inside the corridor it needs, and
 only far enough ahead that there is time to clear it — and the server buckets those onto `Round::DEBRIS_SLOT` of

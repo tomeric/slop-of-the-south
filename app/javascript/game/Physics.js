@@ -212,9 +212,14 @@ export class Physics {
       mesh.frustumCulled = false                      // the pool is scattered; its rest bounds mean nothing
       mesh.count = n
       mesh.renderOrder = d.mat?.transparent ? 3 : 0
-      const pool = { kind, mesh, chips: [], next: 0 }
+      // Two bands in the same pool, so it is still one mesh and one draw call. The coarse band is what a wall
+      // actually comes apart into — lumps, big shards, lengths of timber — and it is what the parade stops for. The
+      // fine band is what is left after somebody has been through the coarse stuff, and the float drives over it.
+      const pool = { kind, mesh, chips: [], coarse: [], fine: [], nextCoarse: 0, nextFine: 0 }
+      const nCoarse = Math.round(n * C.coarseShare)
       for (let i = 0; i < n; i++) {
-        const size = C.size * d.size * (0.78 + (i % 7) / 16)
+        const fine = i >= nCoarse
+        const size = C.size * d.size * (fine ? C.fineScale : 1) * (0.78 + (i % 7) / 16)
         const half = [d.box[0], d.box[1], d.box[2]].map((k) => Math.max(C.minChip, size * k) / 2)
         const body = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic()
           .setTranslation(0, -1000, 0).setLinearDamping(T.physics.debris.linear).setAngularDamping(T.physics.debris.angular)
@@ -222,8 +227,9 @@ export class Physics {
         const col = this.world.createCollider(this.R.ColliderDesc.cuboid(half[0], half[1], half[2])
           .setDensity(d.density ?? T.physics.debris.density).setFriction(T.physics.debris.friction)
           .setRestitution(d.bounce ?? T.physics.debris.bounce).setCollisionGroups(GROUP.debris), body)
-        const chip = { body, col, size, pool, slot: i, live: false, born: 0, prev: null }
+        const chip = { body, col, size, pool, slot: i, fine, live: false, born: 0, prev: null }
         pool.chips.push(chip)
+        ;(fine ? pool.fine : pool.coarse).push(chip)
         this.chips.push(chip)
         mesh.setMatrixAt(i, _m.makeScale(0, 0, 0))
         mesh.setColorAt(i, colour.setHex(d.colours[i % d.colours.length]).multiplyScalar(0.85 + (i % 5) / 12))
@@ -236,13 +242,13 @@ export class Physics {
   }
 
   // n pieces of `kind` thrown out of a point: bricks off a wall, shards off a window, logs off a tree
-  burst(x, y, z, r, n, kind = "steen") {
+  burst(x, y, z, r, n, kind = "steen", fine = false) {
     if (!this.world || !T.physics.on) return 0
     if (this.chunks && !this.chunks.ready(x, z)) return 0     // no ground under it yet: it would fall for ever
     const C = T.physics.chips
     let made = 0
     for (let k = 0; k < n; k++) {
-      const chip = this.take(kind)
+      const chip = this.take(kind, fine)
       if (!chip) break
       const a = (k / n + Math.random() / n) * Math.PI * 2, up = 0.4 + Math.random() * 0.9
       const spread = Math.max(r, C.size * 1.5)              // born apart: five boxes inside one metre shove each
@@ -290,13 +296,14 @@ export class Physics {
 
   // a free slot, else the oldest one — and anything recycled in mid-air is set down on the ground first, because a
   // chip that stops being simulated while it is still falling is exactly the thing this module exists to prevent
-  take(kind) {
+  take(kind, fine = false) {
     const pool = this.pools.get(kind) ?? this.pools.get("steen")
-    const chips = pool?.chips
+    const chips = fine ? pool?.fine : pool?.coarse
     if (!chips?.length) return null
+    const cursor = fine ? "nextFine" : "nextCoarse"
     for (let i = 0; i < chips.length; i++) {
-      const chip = chips[(pool.next + i) % chips.length]
-      if (!chip.live) { pool.next = (pool.next + i + 1) % chips.length; return chip }
+      const chip = chips[(pool[cursor] + i) % chips.length]
+      if (!chip.live) { pool[cursor] = (pool[cursor] + i + 1) % chips.length; return chip }
     }
     let oldest = chips[0]
     for (const chip of chips) if (chip.born < oldest.born) oldest = chip
@@ -337,6 +344,21 @@ export class Physics {
       if (Math.hypot(p.x - x, p.z - z) <= r) { this.free(chip); n++ }
     }
     return n
+  }
+
+  // A heap has been shifted. The big stuff in it goes, and what is left behind in its place is the sweepings —
+  // fine rubbish, which nobody has to stop for. Fallen lumps in there are broken up the same way.
+  crumble(x, z, r) {
+    const spots = []
+    for (const chip of this.chips) {
+      if (!chip.live || chip.fine) continue
+      const p = chip.body.translation()
+      if (Math.hypot(p.x - x, p.z - z) > r) continue
+      spots.push([p.x, p.y, p.z, chip.pool.kind])
+      this.free(chip)
+    }
+    for (const [cx, cy, cz, kind] of spots) this.burst(cx, cy, cz, 0.4, T.physics.chips.crumbleTo, kind, true)
+    return spots.length
   }
 
   free(chip) {
@@ -455,6 +477,9 @@ export class Physics {
         slot.asleep = true
         slot.body.setBodyType(this.R.RigidBodyType.Fixed, false)
         this.moving.delete(slot)
+        // a wall lying across the street is the coarsest debris there is: the parade has to be told
+        const p = slot.body.translation()
+        this.onSettle?.(p.x, p.y, p.z)
       }
     }
   }
@@ -661,7 +686,7 @@ export class Physics {
       live++
       if (chip.body.isSleeping()) {
         // the frame it stops moving is the frame it becomes something lying in the road
-        if (!chip.settled) { chip.settled = true; this.onSettle?.(p.x, p.y, p.z) }
+        if (!chip.settled) { chip.settled = true; if (!chip.fine) this.onSettle?.(p.x, p.y, p.z) }
         highest = Math.max(highest, p.y - ground - chip.size / 2)
       } else { chip.settled = false; awake++ }
     }

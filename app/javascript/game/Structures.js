@@ -197,7 +197,7 @@ export class Structures {
   // blast that only breaks what is still standing does nothing to them. This turns the fallen ones within reach
   // into the material they are made of: the body goes, the panel goes out of the drawn geometry, and what is left
   // is a heap of brick. Fire enough and a wall ends up as rubble rather than as a stack of slabs.
-  shatter(x, y, z, r) {
+  shatter(x, y, z, r, { fine = false, chips = true } = {}) {
     let n = 0
     for (const entry of this.built.values()) {
       if (!entry.live?.size) continue
@@ -210,7 +210,7 @@ export class Structures {
         const size = b ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) : 1
         this.physics?.dropPiece(entry, piece, slot)
         this.hide(entry, piece)
-        this.physics?.burst(p.x, p.y, p.z, size * 0.3, Math.min(T.physics.pieces.shatter, Math.max(2, Math.round(size * 1.6))), mat)
+        if (chips) this.physics?.burst(p.x, p.y, p.z, size * 0.3, Math.min(T.physics.pieces.shatter, Math.max(2, Math.round(size * 1.6))), mat, fine)
         n++
       }
     }

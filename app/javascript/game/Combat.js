@@ -137,8 +137,11 @@ export class Combat {
     let carted = 0
     for (let i = 1; i <= n; i++) {
       const k = i / n
-      carted += this.physics.shove(was.x + dx * k, y, was.z + dz * k, r,
-                                   Math.sign(v) * f.x, Math.sign(v) * f.z, push / n, carts ? r : 0).carted
+      const px = was.x + dx * k, pz = was.z + dz * k
+      carted += this.physics.shove(px, y, pz, r, Math.sign(v) * f.x, Math.sign(v) * f.z, push / n, carts ? r : 0).carted
+      // A blade does not care which grade it is: a wall lying in the road goes the same way a brick does, and it
+      // leaves nothing behind, because this is the machine whose whole job is clearing.
+      if (carts) carted += this.structures?.shatter(px, y, pz, r, { chips: false }) ?? 0
     }
     this.bladeWas = { x, z }
     if (carted) this.effects.dust(x, y, z, 1.2 + carted * 0.2)
@@ -387,7 +390,7 @@ export class Combat {
     if (this.physics?.world) {
       const blast = T.physics.blast
       // whatever is already lying there gets broken up rather than merely shoved again
-      this.structures?.shatter(x, y, z, r * blast.reach)
+      this.structures?.shatter(x, y, z, r * blast.reach, { fine: true })
       for (const { entry, piece } of this.physics.near(x, y, z, r * blast.reach)) {
         const c = piece.world
         const dx = c.cx - x, dy = c.cy - y, dz = c.cz - z, d = Math.hypot(dx, dy, dz) || 1

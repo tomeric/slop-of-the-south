@@ -9,13 +9,13 @@ import { casts } from "game/Shadows"
 // The mesh builders honour the contract the suspension and the effects expect: userData.wheels (a pivot per wheel
 // at its corner, with its radius), userData.lights (head and tail materials) and userData.flames (exhaust sprites).
 export const VEHICLES = [
-  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Houd E ingedrukt en de raketten blijven komen zolang de turbometer het volhoudt.",
+  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Eén raket per druk op E, tien op een volle turbometer.",
     maxSpeed: 32, accel: 11, brakeForce: 20, maxSteer: 0.6, wheelbase: 1.9, track: 1.4, length: 2.6,
     side: 1, bottom: 1, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },
     mass: 350, com: 0.45, grip: 1.0, bite: 0.25,           // kg, centre of mass above the contact patch
     body: { hx: 0.6, hy: 0.42, hz: 1.1, y: 0.76, z: 0.2 }, // the hull, clear of the ground: the wheels carry the car
     smashMin: 13, smashPanels: 2, smashLoss: 1.4,          // it takes a proper run-up, and the wall takes it out of you
-    ability: { kind: "missile", repeat: true, refire: 0.1, cost: 0.1, hint: "E raketten (ingedrukt houden)" } },   // ten to a full meter
+    ability: { kind: "missile", refire: 0.1, cost: 0.1, hint: "E raket" } },   // one a press, ten to a full meter
   { id: "monster", naam: "Monstertruck", blurb: "Even snel, hoog op de wielen. Springt en verplettert wat eronder ligt; drift met je flank tegen een huis voor de meeste schade.",
     maxSpeed: 32, accel: 9, brakeForce: 18, maxSteer: 0.5, wheelbase: 3.4, track: 2.4, length: 5.0,
     side: 2, bottom: 4, clear: 1.0, push: false, pushMin: 0, cam: { dist: 1.25, height: 1.3 },   // flanks and lands on things

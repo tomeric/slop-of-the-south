@@ -113,7 +113,7 @@ async function main() {
     const at = round.onRoute(x, z)
     if (at !== null) settled.add(Math.round(at))
   }
-  index.onSwept = (obj) => physics.sweep(obj.x, obj.z, obj.r + 2)
+  index.onSwept = (obj) => physics.crumble(obj.x, obj.z, obj.r + 2)
   index.onDown = (obj) => structures.demolish(obj)          // the server says it is rubble: everything still up lets go
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))

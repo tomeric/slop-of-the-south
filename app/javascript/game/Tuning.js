@@ -149,7 +149,10 @@ export const TUNING = {
     thrust: { ratio: 1.7, height: 18, damp: 0.8, vMax: 12, drainScale: 0.5, spread: 0.72 },
     // The debris pool, split between the materials the world is made of (game/Physics.js DEBRIS). `minChip` is
     // the floor on a collider's smallest dimension: under `maxFall x step` it goes through the ground.
-    chips: { pool: 260, size: 0.5, speed: 7, life: 30, minChip: 0.22 },   // pool: reload (the bodies are made once)
+    // Two grades. `coarseShare` of each pool is the big stuff a wall actually comes apart into, which is what
+    // the parade stops for; the rest is `fineScale` of that size and is what is left once somebody has cleared
+    // the big stuff, which the float drives straight over.
+    chips: { pool: 300, size: 0.5, speed: 7, life: 30, minChip: 0.22, coarseShare: 0.45, fineScale: 0.55, crumbleTo: 2 },   // pool: reload
     pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5, chips: 4, shards: 6, maxShards: 16, shatter: 9 },   // chips off a broken
                                               // panel, and the shards a pane goes into instead of toppling   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points
