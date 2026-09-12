@@ -157,7 +157,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, shadows, facades, structures, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, shadows, facades, structures, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vehicleSpec, vrij, tuning: TUNING }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"

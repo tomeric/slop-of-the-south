@@ -10,7 +10,7 @@ import { TUNING as T } from "game/Tuning"
 const STEP = 1.5                     // metres a shot may travel between hit tests
 const MISSILE = { speed: 60, life: 3, r: 6, dmg: 70 }
 const JUMP = { v: 9, r: 4, dmg: 90 }
-const BLADE = { lift: 0.35, tilt: 0.32, rate: 2.5, slam: 150 }   // the arms rise and pivot up (rad), per second, damage on the way
+const BLADE = { lift: 0.35, tilt: 0.32, rate: 2.5, slam: 150, reach: 2.2 }   // the arms rise and pivot up (rad), per second, damage on the way
 const shotMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d0, metalness: 0.5, roughness: 0.4 })
 const noseMat = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.5 })
 const finMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 })
@@ -55,35 +55,41 @@ export class Combat {
       if (car.vy !== null && !obj.rings) continue
       const flank = Math.abs(nx * rx + nz * rz) > Math.abs(nx * f.x + nz * f.z)               // the wall faces the side, not the nose
       if (obj.state === 1) { car.speed *= 1 - 2.5 * dt; this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
-      if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { car.speed *= 1 - 1.5 * dt; this.queue(obj, spec.ram * v * 10 * dt); this.effects.shake(0.05); break }
       const into0 = -(car.vx * nx + car.vz * nz)
       // A house built out of pieces is not a footprint any more. hitPoint still answers with the outline BAG
       // surveyed, but what is actually in the way is whatever panels are still standing there — so ask the physics
       // world, and if the wall at this spot has already gone, drive on through the hole.
-      const entry = this.structures?.get(obj.key)
-      if (entry) {
-        const here = this.physics.near(px, car.y + 0.7, pz, T.physics.smash.reach).filter((h) => h.entry === entry)
+      if (this.structures?.get(obj.key)) {
+        // Whatever is standing at this point, whoever owns it. A terrace shares its party walls with the house next
+        // door, and asking only about the building hitPoint happened to name left the car gliding through the one
+        // that was actually in the way.
+        const here = this.physics.near(px, car.y + 0.7, pz, T.physics.smash.reach)
         if (!here.length) continue                                     // the wall that stood here is gone: drive on
-        // inside a house there is nowhere to be pushed out to: what is left slows you down instead
+        // What it takes to go through one is the vehicle's business, not the world's: a bulldozer leans on it at
+        // walking pace, a monster truck needs a run-up, a trike needs to be reckless.
         if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
           let n = 0
           for (const h of here) {
-            if (n >= T.physics.smash.maxPanels) break
-            n += this.structures.break(entry, h.piece, car.vx * T.physics.smash.shove, 1.5, car.vz * T.physics.smash.shove)
+            if (n >= (spec.smashPanels ?? T.physics.smash.maxPanels)) break
+            const broke = this.structures.break(h.entry, h.piece, car.vx * T.physics.smash.shove, 1.5, car.vz * T.physics.smash.shove)
+            if (broke) this.queue(h.entry.obj, T.physics.smash.damage)
+            n += broke
           }
           if (n) {
-            car.speed = Math.sign(car.speed || 1) * Math.max(T.physics.smash.exit, Math.abs(car.speed) - n * T.physics.smash.loss)
+            const loss = n * T.physics.smash.loss * (spec.smashLoss ?? 1)
+            car.speed = Math.sign(car.speed || 1) * Math.max(T.physics.smash.exit, Math.abs(car.speed) - loss)
             car._speedOut = car.speed                                  // or Vehicle.integrate kills the drift next frame
-            this.queue(obj, spec.ram * 0.25 * into0 * into0 + n * T.physics.smash.damage)
+            this.queue(obj, spec.ram * 0.25 * into0 * into0)
             this.effects.dust(px, car.y + 0.8, pz, 1.2 + n * 0.3)
             this.effects.shake(Math.min(0.5, into0 / 40))
             break
           }
         }
-        car.speed *= 1 - T.physics.smash.grind * dt                    // too slow to break it: grind against it
+        car.speed *= 1 - (spec.push ? 1.5 : T.physics.smash.grind) * dt   // too slow to break it: grind against it
         this.queue(obj, spec.ram * Math.abs(car.speed) * 2 * dt)
         break
       }
+      if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { car.speed *= 1 - 1.5 * dt; this.queue(obj, spec.ram * v * 10 * dt); this.effects.shake(0.05); break }
       car.x += nx * depth; car.z += nz * depth
       const into = -(car.vx * nx + car.vz * nz)                                              // speed into the wall
       if (into <= 0) continue
@@ -194,6 +200,11 @@ export class Combat {
       if (hit?.obj.rings) {
         b.slammed = true
         this.queue(hit.obj, BLADE.slam)
+        // and if it is built out of pieces, the blade takes the ones it is standing against with it
+        const entry = this.structures?.get(hit.obj.key)
+        if (entry) for (const h of this.physics.near(px, mesh.position.y + 1.2, pz, BLADE.reach)) {
+          if (h.entry === entry) this.structures.break(entry, h.piece, fx * 4, 3, fz * 4)
+        }
         this.effects.dust(px, mesh.position.y + 1, pz, 2.5)
         this.effects.shake(0.35)
       }

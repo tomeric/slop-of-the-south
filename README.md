@@ -386,9 +386,12 @@ on a five-storey terrace: knock out the twenty-one panels of its ground floor an
 them, and nothing is left standing that has no path to the ground.
 
 Driving into one is its own rule. `hitPoint` still answers with the footprint BAG surveyed, so a built building asks
-the physics world what is actually in the way at the contact point: no panel there any more and the car drives on
-through the hole; a panel there and you are fast enough, you break it and lose `smash.loss` of speed for it; too
-slow and you grind against it rather than being fired back out of a house you are already inside. Each broken piece
+the physics world what is actually standing at the contact point — whoever owns it, since a terrace shares its party
+walls: no panel there any more and the car drives on through the hole; a panel there and you are fast enough, you
+break it and lose speed for it; too slow and you grind against it rather than being fired back out of a house you
+are already inside. What "fast enough" means belongs to the vehicle, not the world: the bulldozer leans through a
+wall at walking pace and barely slows (`smashMin` 1.5, seven panels a frame), the monster truck needs a short run-up
+(6), and the trike has to be doing 47 km/h before brick gives (13) and loses half its speed doing it. Each broken piece
 also feeds its share of the building's hit points into the same queue ramming does, so demolishing a house by hand
 and driving into it end in the same place as far as the server is concerned.
 

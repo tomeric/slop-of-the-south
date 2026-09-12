@@ -12,17 +12,20 @@ export const VEHICLES = [
   { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Eén raketwerper, een raket om de 2,5 seconde.",
     maxSpeed: 32, accel: 11, brakeForce: 20, maxSteer: 0.6, wheelbase: 1.9, track: 1.4, length: 2.6,
     ram: 0.02, side: 1, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },
+    smashMin: 13, smashPanels: 2, smashLoss: 1.4,          // it takes a proper run-up, and the wall takes it out of you
     ability: { kind: "missile", cooldown: 2.5, hint: "E raket" } },
   { id: "monster", naam: "Monstertruck", blurb: "Even snel, hoog op de wielen. Springt en verplettert wat eronder ligt; drift met je flank tegen een huis voor de meeste schade.",
     maxSpeed: 32, accel: 9, brakeForce: 18, maxSteer: 0.5, wheelbase: 3.4, track: 2.4, length: 5.0,
     ram: 0.4, side: 2.5, clear: 1.0, push: false, pushMin: 0, cam: { dist: 1.25, height: 1.3 },
+    smashMin: 6, smashPanels: 4, smashLoss: 0.7,
     ability: { kind: "jump", cooldown: 2.5, hint: "E springen" } },
   { id: "bulldozer", naam: "Bulldozer", blurb: "Traag, maar ramt op snelheid dwars door alles heen en veegt puin in één keer weg. Het blad op en neer beukt een huis extra.",
     maxSpeed: 12, accel: 5, brakeForce: 14, maxSteer: 0.6, wheelbase: 3.2, track: 2.4, length: 5.5,
     ram: 3.0, side: 1, clear: 50, push: true, pushMin: 2, cam: { dist: 1.3, height: 1.3 },
+    smashMin: 1.5, smashPanels: 7, smashLoss: 0.2,         // it is a bulldozer: it walks through walls
     ability: { kind: "blade", cooldown: 1.0, hint: "E blad op/neer" } },
 ]
-const AUTO = { id: "auto", naam: "Auto", length: 4.1, wheelbase: 2.6, track: 1.6, ram: 0.1, clear: 0.4, push: false, pushMin: 0, cam: { dist: 1, height: 1 }, ability: { kind: "none", cooldown: 0, hint: "" } }
+const AUTO = { id: "auto", naam: "Auto", length: 4.1, wheelbase: 2.6, track: 1.6, ram: 0.1, clear: 0.4, push: false, pushMin: 0, smashMin: 13, smashPanels: 2, smashLoss: 1.4, cam: { dist: 1, height: 1 }, ability: { kind: "none", cooldown: 0, hint: "" } }
 
 export const vehicleSpec = (id) => VEHICLES.find((v) => v.id === id) ?? (id === "auto" ? AUTO : VEHICLES[0])
 
