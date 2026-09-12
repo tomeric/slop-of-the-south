@@ -88,6 +88,11 @@ export const TUNING = {
     storey: 3.0, bay: 2.8,                    // a facade cell: one storey tall, one bay wide (reload: baked into the UVs)
     minWidth: 2.0, minHeight: 2.4,            // walls smaller than this get plain brick instead of a window
     lit: 0.42,                                // how brightly the windows burn at night (live)
+    // The lit rooms behind the windows of a built house. `threshold` is how bright a room has to want to be before
+    // its light is on at all, so 1 - threshold of them are dark; `swing` is how far the slow clock can carry a room
+    // across that line, which is the share of the street that changes while you watch; `rate` is how fast it goes
+    // round — a day here is six minutes, so this is a couple of turns a night.
+    rooms: { threshold: 0.45, swing: 0.1, rate: 0.07 },
     detail: { on: true, cell: 125, radius: 1 },   // plinths, gutters, sills and doors, streamed 3x3 cells around the car
     // The houses near enough to look into are not a shell with windows painted on it but a stack of pieces: panels
     // with real openings and thickness, floors, partitions and roof (game/Structure.js). `radius` is the whole cost.
@@ -106,6 +111,7 @@ export const TUNING = {
       partThick: 0.1, partStep: 2.5, doorWide: 1.0,
       doorHigh: 2.1, doorReach: 22,      // the front door, on the widest wall with a street this close in front of it
       stairs: true, stairWide: 1.0, stairLong: 3.2,
+      roomBack: 0.45, roomOver: 0.12,    // how far inside the wall the lit room panel sits, and how far it oversails
     },
   },
   // The rigid-body world (game/Physics.js). `on` is a boot setting — ?fysica=0 never even downloads the engine —

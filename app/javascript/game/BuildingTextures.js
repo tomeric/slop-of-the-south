@@ -158,6 +158,9 @@ const METRES = { steen: 2.4, pannen: 2.0, bitumen: 3.0, pleister: 2.0, beton: 2.
 const STRUCTURE = new Set([ "pleister", "beton", "hout" ])     // built by game/Structure.js, and wound correctly
 const materials = new Map()
 const lit = []                                        // the facade materials, dimmed and lit by setBuildingsNight
+// x is the clock the room lights swing on, y the brightness a room must have to be lit at all, z how far the swing
+// can carry one across that line. Shared by every `kamer` material instance, so the whole street keeps one time.
+const roomClock = { value: new THREE.Vector3(0, 0.45, 0.1) }
 
 let facadeMaps = null
 function facade() {
@@ -184,11 +187,26 @@ export function buildingMaterial(name) {
     })
     if (on) lit.push(m)
   } else if (name === "glas") {
-    // the one surface with no texture on it: what you see is the sky the environment map is carrying, and after dark
-    // the light behind it. Punching a real hole takes the painted window (and its glow) out of the facade map, so
-    // this joins the `lit` list in its place.
-    m = new THREE.MeshStandardMaterial({ color: 0x8fa7b8, vertexColors: true, roughness: 0.08, metalness: 0.5,
-      emissive: 0xffca6e, emissiveIntensity: 0 })
+    // the one surface with no texture on it: what you see through it is the sky the environment map is carrying,
+    // and after dark the room behind it. The glass itself does not glow — a window is not a lamp.
+    m = new THREE.MeshStandardMaterial({ color: 0x8fa7b8, vertexColors: true, roughness: 0.08, metalness: 0.5 })
+  } else if (name === "kamer") {
+    // The room behind the window, which is where the light actually comes from. Its vertex colour is not a colour:
+    // red carries the room's own phase and green how bright it wants to be, both fixed for the life of the house,
+    // and the shader below decides from them whether the light is on. A window is lit when its green clears the
+    // threshold — so a fixed share of rooms are dark — and the few sitting within `swing` of it cross over as the
+    // clock comes round, which is the tenth of the street that turns a light on or off while you watch.
+    m = new THREE.MeshStandardMaterial({ color: 0x000000, vertexColors: true, roughness: 1,
+      emissive: 0xffca6e, emissiveIntensity: 0, side: THREE.FrontSide })
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uRoom = roomClock
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform vec3 uRoom;   // x: clock, y: threshold, z: swing")
+        .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+          float breathe = 0.5 + 0.5 * sin(uRoom.x + vColor.r * 6.2831853);
+          float on = step(uRoom.y, vColor.g + uRoom.z * (breathe - 0.5));
+          totalEmissiveRadiance *= on * (0.80 + 0.20 * breathe);`)
+    }
     lit.push(m)
   } else {
     m = new THREE.MeshStandardMaterial({ map: texture(METRES[name], DRAW[name]()), vertexColors: true, roughness: 0.92,
@@ -197,10 +215,14 @@ export function buildingMaterial(name) {
   m.__shared = true
   // the structure is hundreds of small pieces per house: an inverted hull round every one of them is a scribble,
   // and it would draw a quarter of a million triangles twice
-  if (STRUCTURE.has(name) || name === "glas") noOutline(m)
+  if (STRUCTURE.has(name) || name === "glas" || name === "kamer") noOutline(m)
   materials.set(name, m)
   return m
 }
 
 // darkness 0 (day) … 1 (night): the windows come on
-export function setBuildingsNight(d) { for (const m of lit) m.emissiveIntensity = T.buildings.lit * d * d }
+export function setBuildingsNight(d, elapsed = 0) {
+  for (const m of lit) m.emissiveIntensity = T.buildings.lit * d * d
+  const R = T.buildings.rooms
+  roomClock.value.set(elapsed * R.rate, R.threshold, R.swing)
+}

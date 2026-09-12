@@ -93,11 +93,11 @@ function slab(emit, basis, faces, edges, d, thick, mats) {
 }
 
 // a convex polygon as a triangle fan on the plane at depth d, facing along ±n
-function fan(emit, mat, basis, poly, d, dir) {
+function fan(emit, mat, basis, poly, d, dir, own) {
   const n = poly.length / 2
   for (let i = 1; i + 1 < n; i++) {
     const a = [poly[0], poly[1], d], b = [poly[i * 2], poly[i * 2 + 1], d], c = [poly[i * 2 + 2], poly[i * 2 + 3], d]
-    dir > 0 ? emit.tri(mat, basis, a, b, c) : emit.tri(mat, basis, a, c, b)
+    dir > 0 ? emit.tri(mat, basis, a, b, c, own) : emit.tri(mat, basis, a, c, b, own)
   }
 }
 
@@ -177,7 +177,11 @@ export function buildStructure(obj, emit) {
         const doorway = fi === front && s === 0 && bay === Math.floor(bays / 2) && full && storeyH > 2.4
         const opening = doorway ? doorRect(cu0, cv0, bayW, S)
           : full && gevel && s < storeys ? windowRect(cu0, cv0, bayW, storeyH) : null
-        cells.push({ bay, s, cu0, cu1, cv0, top, parts, opening, door: doorway })
+        // this room's own two numbers, stable for the life of the house: a phase, so no two windows breathe
+        // together, and a brightness that decides whether its light is on at all
+        const h = hash32(`${obj.key}:${fi}:${bay}:${s}`)
+        const room = [ ((h >>> 8) & 1023) / 1023, ((h >>> 18) & 1023) / 1023, 1 ]
+        cells.push({ bay, s, cu0, cu1, cv0, top, parts, opening, door: doorway, room })
       }
     }
     const rim = outline(cells.flatMap((c) => (c.opening ? holeParts(c) : c.parts)))
@@ -427,6 +431,15 @@ function panelWithHole(emit, basis, d, c, rim, S) {
   const mat = c.door ? "hout" : "glas"                             // a leaf, or the glass, set back in the reveal
   fan(emit, mat, basis, pane, d - S.reveal, 1)
   fan(emit, mat, basis, pane, d - S.reveal, -1)
+  // What you see through the window after dark is the room, not the glass: a panel set back inside the wall,
+  // overlapping the opening so the reveal casts across it. Its vertex colour is not a colour at all — it carries
+  // this room's own phase and its own brightness, and the shader in game/BuildingTextures.js decides from those
+  // whether the light is on. So no two windows agree, some rooms stay dark, and a few cross over as the night goes.
+  if (!c.door) {
+    const m = S.roomOver
+    const room = [o.u0 - m, o.v0 - m, o.u1 + m, o.v0 - m, o.u1 + m, o.v1 + m, o.u0 - m, o.v1 + m]
+    fan(emit, "kamer", basis, room, d - S.thick - S.roomBack, 1, c.room)
+  }
 }
 
 // a flat [u, v, …] ring → flat convex triangles, through the same earcut the shell uses
@@ -497,7 +510,7 @@ export function collector(colour) {
             basis.u.z * u + basis.v.z * v + basis.n.z * d)
 
   const emit = {
-    tri(mat, basis, a, b, c) {
+    tri(mat, basis, a, b, c, own) {
       const t = bucket(mat)
       // the piece's own box, tracked in the plane it was built in: a wall panel is a thin slab standing on its edge,
       // and an axis-aligned box round it would be a poor collider on any street that does not run north-south
@@ -513,7 +526,7 @@ export function collector(colour) {
       N.copy(P[1]).sub(P[0]).cross(_p.copy(P[2]).sub(P[0]))
       if (N.lengthSq() < 1e-12) return
       N.normalize()
-      const rgb = colour[mat] ?? colour.wall
+      const rgb = own ?? colour[mat] ?? colour.wall
       for (let i = 0; i < 3; i++) {
         const p = P[i], s = i === 0 ? a : i === 1 ? b : c
         t.pos.push(p.x, p.y, p.z)
@@ -523,7 +536,7 @@ export function collector(colour) {
         if (box) box.expandByPoint(p)
       }
     },
-    quad(mat, basis, a, b, c, d) { emit.tri(mat, basis, a, b, c); emit.tri(mat, basis, a, c, d) },
+    quad(mat, basis, a, b, c, d, own) { emit.tri(mat, basis, a, b, c, own); emit.tri(mat, basis, a, c, d, own) },
     begin(piece) {
       at.clear()
       for (const [name, b] of buckets) at.set(name, b.pos.length / 3)

@@ -392,6 +392,15 @@ free. The room's running total rides out with the verdicts at 4 Hz and sits in t
 Free roam keeps its own total the same way. Every `T.money.label` euros taken off one building, a comic starburst
 goes up over it with the amount in it — and over €200k it says something.
 
+**Lights in the rooms.** A window is not a lamp. On a house near enough to be built out of pieces, each window
+opening has a panel set back inside the wall, and that is what glows after dark — you are looking through the glass
+at a lit room, with the reveal casting across it. Its vertex colour is not a colour: red carries that room's own
+phase and green how bright it wants to be, both fixed for the life of the house, and a small shader patch decides
+from the two whether the light is on. A room is lit when its green clears `rooms.threshold`, so a fixed share stay
+dark all night; the few sitting within `rooms.swing` of the line cross over as the clock comes round. Measured over
+1 476 rooms in 37 houses: 54 % lit at any moment, and 9.3 % of them turn a light on or off over the course of a
+night. It costs one uniform and no CPU at all.
+
 **What a hit costs.** Damage is the kinetic energy the vehicle actually delivers: `k × ½ m v²` along the contact
 normal, so doubling your speed does four times the damage and a bulldozer slowed to walking pace stops being a
 wrecking ball. Two coefficients sit on top — `bite`, how well the thing is shaped for demolition (a blade

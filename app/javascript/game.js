@@ -213,7 +213,7 @@ async function main() {
     const darkness = dayNight.update()
     shadows.update(world.camera, dayNight.env.sunDir, darkness)
     environment.update(dayNight.env, world.hemi.groundColor, timer.getElapsed(), dt * 1000)
-    car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness); setBuildingsNight(darkness)
+    car.setNight(darkness); remotes.setNight(darkness); setNightLevel(darkness); setSignsNight(darkness); setBuildingsNight(darkness, timer.getElapsed())
     updateWater(dayNight.env, timer.getElapsed())
     updateGround()
     scatter.update(dt, timer.getElapsed(), car)
