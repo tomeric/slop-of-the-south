@@ -230,11 +230,13 @@ buildings, and `t/l/g/s:<dm x>,<dm z>` for trees, lamps, traffic lights and sign
 which both sides round to a decimetre. The tile builders register a handle per object (vertex range or instance
 index) and `Destructibles.js` keeps them in a grid for the car and the weapons.
 
-**Vehicles.** Trike (fast, one rocket launcher, a missile every 2.5 s, barely dents anything itself), monstertruck
-(as fast, jumps and crushes on landing, and its flanks do two and a half times the ramming damage of its nose, so
-drift into the houses) and bulldozer (slow, grinds through anything in front of it, clears rubble in one pass, and E
-lifts or drops the blade for an extra slam on the building it touches). Ramming damage grows with the square of the
-speed into the wall. A shared action (teleport from the map or vehicle switch) has a minute of cooldown, reset at
+**Vehicles.** Two. The **trike** is light and quick, fires one rocket per press of E (ten to a full nitro meter) and
+barely dents anything by driving into it — except backwards: it carries a ram across its tail, and swinging that
+into a wall on the handbrake hits eight times as hard as its nose does. The **monster truck** is the heavy: a
+3.4 m blade welded across its nose that clears the street of anything it touches and leans through brickwork at
+walking pace, four thrusters under the chassis on E instead of a jump, flanks that hit twice as hard as its nose
+and an underside that hits four times as hard, which is what a landing is. Damage is the kinetic energy delivered,
+so it grows with the square of the speed into the wall. A shared action (teleport from the map or vehicle switch) has a minute of cooldown, reset at
 every new town; switching is free between rounds. Explosions shove nearby cars, nobody dies.
 
 **Protocol.** Server → client: `sync` (on subscribe), `round` (status changes), `object`, `end`, `teleport` and
@@ -430,12 +432,12 @@ windows' worth of glass.
 
 **Clearing it.** What the front of a vehicle does to loose rubbish is a different job from what it does to walls,
 and it runs on `spec.clear`, the same coefficient the rubble heaps use — which spans 0.4 to 50, so a trike nudges a
-brick and a bulldozer clears the street. The dozer destroys everything under its blade rather than pushing a pile
+brick and the truck's blade clears the street. It destroys everything under the blade rather than pushing a pile
 along in front of it, and only with the blade down. The swath is its real plate width and is swept from where the
 blade *was* to where it is, in steps no longer than its own width, so nothing is stepped over between frames.
 Measured by driving through a 48-piece spill: **nothing at all is left lying inside the swath it drove through**;
 what survives is what the blade never touched, because a scattered burst spreads over sixteen metres and the blade
-is six. Blade up clears nothing, and so does everything that is not a bulldozer.
+is six. Anything without a blade clears nothing.
 
 **Tricks run on the meter.** Every vehicle's trick is paid for out of the same nitro the boost and the thrusters
 spend, so what limits you is fuel rather than a stopwatch. What is left of the stopwatch is `refire`, there only to
@@ -448,7 +450,7 @@ shards, lengths of timber — and it is what the parade stops for. The fine grad
 and is what is left once somebody has been through the coarse stuff: the float drives straight over it, and it is
 never reported as an obstacle at all. Both grades live in the same pool and the same instanced mesh, so this costs
 no draw calls; `chips.coarseShare` is the split. Breaking a wall gives coarse debris and nothing else; putting a
-rocket into what has already fallen turns those lumps into the fine grade. A bulldozer's blade does not care which
+rocket into what has already fallen turns those lumps into the fine grade. The blade does not care which
 is which — measured driving through a pile of both, **nothing of either grade is left inside the swath**, lumps
 included.
 
@@ -459,16 +461,15 @@ route, so a house that sheds fifty pieces over eight metres becomes one heap to 
 an obstacle like any other: it sits in route order, the float loses to it, it wears its own icon on the tracker
 (🧱, which a flattened building gets too), and sweeping it aside carts off the pieces lying there, because the heap
 and the mess are the same thing. You plough through it rather than off it, at `spec.clear` — under a second in a
-trike, instantly in a bulldozer.
+trike, instantly behind a blade.
 
 **What a hit costs.** Damage is the kinetic energy the vehicle actually delivers: `k × ½ m v²` along the contact
-normal, so doubling your speed does four times the damage and a bulldozer slowed to walking pace stops being a
+normal, so doubling your speed does four times the damage and a truck slowed to walking pace stops being a
 wrecking ball. Two coefficients sit on top — `bite`, how well the thing is shaped for demolition (a blade
 concentrates its energy, a trike's nose splatters), and which part of you made contact. The monster truck hits
 twice as hard with a flank and **four times** as hard with its underside, so landing flat on a roof is a way to
-play it; the bulldozer hits half as hard again while its blade is actually swinging. Calibrated so each vehicle
-lands on what its old hand-picked coefficient gave at its own ramming speed — trike 20 at 30 m/s, truck 160 nose
-and 320 flank at 20, dozer 300 at 10 — but moving with mass and speed from here on rather than sitting in a table.
+play it; and the trike's tail ram hits **eight times** as hard as its nose, but only in a drift — a ram is a thing
+you swing, not a thing you reverse into. A trike nose at 25 m/s does 14; the same trike swinging its ram does 109.
 
 **Driving through one.** A chassis that is really there is stopped by a wall the moment it touches one, and a wall
 is several panels thick — so breaking a few at a probe point leaves you stalled against the rest of the house.
@@ -476,9 +477,8 @@ Above the vehicle's smash speed it sweeps everything out of a ball just in front
 the vehicle and by how fast it is going, and drives on through what is now loose rubble; the speed it loses is the
 energy the solver takes off it shoving that rubble aside, rather than a per-panel tax. Below that speed, leaning on
 the wall with the throttle down still works, and what gets through is traction — the force the vehicle can put on
-the ground, `mass × accel`. That is 60 kN for the bulldozer, 36 for the monster truck and 3.9 for the trike, so the
-dozer grinds two panels a second and flattens a house in fifteen, the truck manages one, and the trike measurably
-cannot do it at all. No table says so anywhere; it falls out of the masses.
+the ground, `mass × accel`. That is 49 kN for the monster truck and 3.9 kN for the trike, so the truck grinds
+through a wall it is leaning on and the trike measurably cannot do it at all. No table says so anywhere; it falls out of the masses.
 
 **Taking a house apart.** Every standing piece is a static box in the physics world, on one fixed body per building,
 so the car and the rocket have something to find. Break one — drive through it above `T.physics.smash.speed`, or put
@@ -499,9 +499,9 @@ Driving into one is its own rule. `hitPoint` still answers with the footprint BA
 the physics world what is actually standing at the contact point — whoever owns it, since a terrace shares its party
 walls: no panel there any more and the car drives on through the hole; a panel there and you are fast enough, you
 break it and lose speed for it; too slow and you grind against it rather than being fired back out of a house you
-are already inside. What "fast enough" means belongs to the vehicle, not the world: the bulldozer leans through a
-wall at walking pace and barely slows (`smashMin` 1.5, seven panels a frame), the monster truck needs a short run-up
-(6), and the trike has to be doing 47 km/h before brick gives (13) and loses half its speed doing it. Each broken piece
+are already inside. What "fast enough" means belongs to the vehicle, not the world: the monster truck leans through
+a wall behind its blade at walking pace (`smashMin` 4), and the trike has to be doing 47 km/h before brick gives
+(13) and loses half its speed doing it. Each broken piece
 also feeds its share of the building's hit points into the same queue ramming does, so demolishing a house by hand
 and driving into it end in the same place as far as the server is concerned.
 

@@ -20,7 +20,7 @@ export class Input {
   get flip()      { return this.consume("KeyQ") }      // back on your wheels where you stand (F belongs to the map)
   get toggleMap() { return this.consume("KeyM") }
   get mute()      { return this.consume("KeyN") }
-  get ability()   { return this.consume("KeyE") }     // a trick you tap: the bulldozer blade
+  get ability()   { return this.consume("KeyE") }     // a trick you tap: the trike's rocket
   get trick()     { return this.keys.has("KeyE") }     // ...or hold: the trike's rockets, the truck's thrusters
   get pick()      { return this.consume("KeyV") }
   get digit()     { for (let i = 1; i <= 6; i++) if (this.consume(`Digit${i}`)) return i; return 0 }

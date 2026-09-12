@@ -4,11 +4,10 @@ import { softTexture } from "game/Effects"
 import { TUNING as T, euro } from "game/Tuning"
 
 // What the player's vehicle does to the world: ramming, driving over rubble, and the tricks on E: the trike's
-// missiles, the monster truck's jump and the bulldozer's blade. Everything here is local prediction plus messages:
+// missiles, the monster truck's jets and the blade it carries. Everything here is local prediction plus messages:
 // damage is queued per object and sent to the server in `hit` batches, the server decides when something falls
 // (Destructibles.apply), and `fire` tells the other players what to draw. Explosions also shove nearby cars.
 const JUMP = { r: 4, dmg: 90 }          // what a hard landing crushes under the monster truck
-const BLADE = { lift: 0.35, tilt: 0.32, rate: 2.5, slam: 150, reach: 2.2 }   // the arms rise and pivot up (rad), per second, damage on the way
 const _mz = new THREE.Vector3(), _dir = new THREE.Vector3()
 const shotMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d0, metalness: 0.5, roughness: 0.4 })
 const noseMat = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.5 })
@@ -32,7 +31,6 @@ export class Combat {
     this.potAt = [ 0, 0, 0 ]
     this.enabled = false            // only while a round is running
     this.shots = []                 // { mesh, x, y, z, vx, vy, vz, life, own, puff }
-    this.blades = new Map()         // mesh → { t, target, slammed } for every bulldozer blade on screen
     this.cd = 0                     // seconds until the trick is ready again
   }
 
@@ -46,21 +44,15 @@ export class Combat {
   // clears posts and trees but not houses. One contact resolves per frame.
   // What a hit costs, in hit points. It is the kinetic energy the vehicle actually delivers into the thing it hit:
   // half its mass times the closing speed along the contact normal, squared. So doubling your speed does four times
-  // the damage, and a bulldozer that has been slowed to walking pace stops being a wrecking ball.
+  // the damage, and a truck that has been slowed to walking pace stops being a wrecking ball.
   //
   // Two coefficients sit on top. `bite` is how well the thing is shaped for demolition — a blade concentrates its
   // energy into a wall, a trike's nose splatters — and it is what keeps the three vehicles distinct now that mass
   // does the rest. The direction multiplier is which part of you made contact: the monster truck hits twice as hard
-  // with a flank and four times as hard with its underside, and a bulldozer with its blade in motion lands half as
-  // hard again.
+  // with a flank and four times as hard with its underside, and a trike swinging its ram into a wall mid-drift
+  // hits many times harder than one that merely drove into it.
   energy(car, closing, mult = 1) {
     return T.damage.k * 0.5 * car.mass * closing * closing * (car.spec.bite ?? 0.3) * mult
-  }
-
-  // the blade counts only while it is actually swinging, which is the 0.4 s between a press and the arms arriving
-  bladeMoving(mesh) {
-    const b = this.blades.get(mesh)
-    return !!b && b.t !== b.target
   }
 
   // Clear a path. The chassis is a real body now, so a wall stops it the moment it touches one — and a wall is many
@@ -74,7 +66,7 @@ export class Combat {
     const fast = v >= (spec.smashMin ?? T.physics.smash.speed)
     // Stopped against a wall with the throttle down, what gets through is not speed but traction — the force the
     // vehicle can actually put on the ground, which is its mass times its acceleration. That is 60 kN for the
-    // bulldozer, 36 for the monster truck and 3.9 for the trike: high, middling and very nearly hopeless, without a
+    // monster truck and 3.9 kN for the trike: middling and very nearly hopeless, without a
     // table anywhere saying so. So leaning on a house works, and how well depends on what you are leaning with.
     const press = !fast && input?.throttle > 0 && v > -0.5 ? car.mass * car.accel : 0
     if (!fast && !press) { this.grindT = 0; return 0 }
@@ -110,23 +102,18 @@ export class Combat {
   }
 
   // What the front of the vehicle does to the rubbish lying in the road, which is a different job from what it does
-  // to walls. `clear` is the same coefficient the rubble heaps use and spans 0.4 to 50, so a trike nudges a brick
-  // and a bulldozer clears the street — and the dozer, alone, carts off what goes under the blade instead of
-  // pushing an ever-growing pile in front of it.
   // What the front of the vehicle does to the rubbish lying in the road, which is a different job from what it does
   // to walls. A blade that only clears what happens to be under one point in front of it leaves most of a pile
   // standing, and at speed it steps clean over things between frames — so the swath is swept from where the blade
-  // was to where it is, in steps no longer than its own width, and a bulldozer destroys everything it touches in
-  // there. Anything else merely nudges what it runs over, at `spec.clear`, which spans 0.4 to 50.
+  // was to where it is, in steps no longer than its own width, and the blade destroys everything it touches in
+  // there. Anything without one merely nudges what it runs over, at `spec.clear`, which spans 0.4 to 50.
   sweep(car, dt) {
     const spec = car.spec, v = car.speed
     if (!this.physics?.world || !spec.clear || Math.abs(v) < 0.2) return
     const D = T.physics.debris
     const f = car.forward()
     const reach = spec.length / 2 + D.sweepAhead
-    // A blade only clears when it is down. Nothing in the map means it has never been raised.
-    const b = this.blades.get(car.mesh)
-    const carts = spec.push === true && (!b || b.t < 0.5)
+    const carts = spec.push === true          // the blade is welded on now: it is always down
     const push = spec.clear * D.sweepPush * Math.min(1, Math.abs(v) / 8) * dt
     const r = carts ? (spec.bladeWidth ?? 3.4) / 2 + D.bladeExtra : (spec.track ?? 2) * 0.6 + 0.6
     const x = car.x + f.x * reach, z = car.z + f.z * reach
@@ -175,8 +162,8 @@ export class Combat {
         // that was actually in the way.
         const here = this.physics.near(px, car.y + 0.7, pz, T.physics.smash.reach)
         if (!here.length) continue                                     // the wall that stood here is gone: drive on
-        // What it takes to go through one is the vehicle's business, not the world's: a bulldozer leans on it at
-        // walking pace, a monster truck needs a run-up, a trike needs to be reckless.
+        // What it takes to go through one is the vehicle's business, not the world's: the truck leans on it at
+        // walking pace behind its blade, a trike has to be reckless.
         if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
           this.queue(obj, this.energy(car, into0, T.damage.through))    // the panels themselves are plough()'s business
           break
@@ -190,7 +177,10 @@ export class Combat {
       const wx = car.vx + nx * into * 1.2, wz = car.vz + nz * into * 1.2                    // that part reverses to a fifth
       car.speed = wx * f.x + wz * f.z; car.lateral = wx * rx + wz * rz; car.vx = wx; car.vz = wz
       if (into > 2 && this.rammed(obj)) {
-        const mult = (flank ? spec.side ?? 1 : 1) * (this.bladeMoving(car.mesh) ? spec.blade ?? 1 : 1)
+        // Which part of you arrived. A flank is the monster truck's; the back is the trike's ram, and only in a
+        // drift — a ram is a thing you swing, not a thing you reverse into.
+        const backwards = !flank && nx * f.x + nz * f.z > 0
+        const mult = flank ? spec.side ?? 1 : backwards && car.drifting ? spec.rear ?? 1 : 1
         this.queue(obj, this.energy(car, into, mult))
         this.effects.dust(px, car.y + 0.6, pz, 1.5)
         this.effects.shake(Math.min(0.6, into / 30))
@@ -230,7 +220,7 @@ export class Combat {
   // ---- the tricks --------------------------------------------------------------------------------------------------
 
   // E fires the vehicle's trick when its cooldown has run out (outside a round it is all show: queue() drops the
-  // damage); landings and blades in motion resolve here too
+  // damage); landings resolve here too
   abilities(car, input, dt) {
     this.cd = Math.max(0, this.cd - dt)
     if (car.landed) {                                                                       // a hop off a hill puffs dust; the monster truck's hard landings crush
@@ -244,7 +234,6 @@ export class Combat {
       else if (car.landImpact > 2) this.effects.dust(car.x, car.y + 0.4, car.z, 1 + car.landImpact * 0.3)
       this.effects.shake(Math.min(0.6, car.landImpact / 12))
     }
-    this.moveBlades(dt)
     // Every trick is paid for out of the same meter the boost and the thrusters spend, so what limits you is fuel
     // rather than a stopwatch. What is left of the stopwatch is `refire`, which is only there to stop a held key
     // firing once a frame — the trike empties a full meter in about a second if you hold it down.
@@ -256,7 +245,6 @@ export class Combat {
     if (cost > 0 && car.boostMeter < cost) return
     switch (a.kind) {
       case "missile": this.launch(car, true); break
-      case "blade":   this.toggleBlade(car.mesh, true); break
     }
     if (cost > 0) car.boostMeter = Math.max(0, car.boostMeter - cost)
     this.cd = a.refire ?? 0.05
@@ -344,39 +332,6 @@ export class Combat {
 
   drop(i) { this.scene.remove(this.shots[i].mesh); this.shots.splice(i, 1) }
 
-  // the bulldozer's blade goes up or down over half a second; a building it meets on the way takes a slam
-  toggleBlade(mesh, own) {
-    const b = this.blades.get(mesh) ?? { t: 0, target: 0, slammed: true, own }
-    b.target = b.target ? 0 : 1
-    b.slammed = false
-    this.blades.set(mesh, b)
-  }
-
-  moveBlades(dt) {
-    for (const [mesh, b] of this.blades) {
-      const blade = mesh.userData.anim?.blade
-      if (!blade || !mesh.parent) { this.blades.delete(mesh); continue }
-      if (b.t === b.target) continue
-      b.t = b.target > b.t ? Math.min(b.target, b.t + BLADE.rate * dt) : Math.max(b.target, b.t - BLADE.rate * dt)
-      blade.position.y = b.t * BLADE.lift
-      blade.rotation.x = b.t * BLADE.tilt                                                     // the arms pivot at the hull; the blade out front swings up
-      if (b.slammed || !b.own) continue
-      const yaw = mesh.rotation.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw)
-      const px = mesh.position.x + fx * 3.2, pz = mesh.position.z + fz * 3.2
-      const hit = this.index.hitPoint(px, pz, 0.6)
-      if (hit?.obj.rings) {
-        b.slammed = true
-        this.queue(hit.obj, BLADE.slam)
-        // and if it is built out of pieces, the blade takes the ones it is standing against with it
-        const entry = this.structures?.get(hit.obj.key)
-        if (entry) for (const h of this.physics.near(px, mesh.position.y + 1.2, pz, BLADE.reach)) {
-          if (h.entry === entry) this.structures.break(entry, h.piece, fx * 4, 3, fz * 4)
-        }
-        this.effects.dust(px, mesh.position.y + 1, pz, 2.5)
-        this.effects.shake(0.35)
-      }
-    }
-  }
 
   // damage everything standing within r of (x, z), falling off to half at the edge, and shove the player's car if it
   // stands close; `own` false replays another player's shot: looks and knockback only, the damage is theirs. A
@@ -411,7 +366,6 @@ export class Combat {
   // another player's trick, as seen from here
   remoteFire(msg, mesh) {
     if (msg.kind === "missile" && msg.vx != null) this.shoot(msg.mx, msg.my, msg.mz, msg.vx, msg.vy, msg.vz, false)
-    if (msg.kind === "blade" && mesh) this.toggleBlade(mesh, false)
   }
 
   // ---- the hit queue -----------------------------------------------------------------------------------------------

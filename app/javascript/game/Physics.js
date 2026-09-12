@@ -318,8 +318,8 @@ export class Physics {
   }
 
   // Something is shoving what is lying in the road. Everything inside r gets pushed the way the blade is going, and
-  // a vehicle that actually clears — the bulldozer — carts off what ends up under the blade rather than merely
-  // pushing it along in front for ever, which is what a bulldozer is for.
+  // a vehicle that actually clears — the one with the blade — carts off what ends up under it rather than merely
+  // pushing it along in front for ever, which is what a blade is for.
   shove(x, y, z, r, dx, dz, push, cartWithin = 0) {
     let moved = 0, carted = 0
     for (const chip of this.chips) {

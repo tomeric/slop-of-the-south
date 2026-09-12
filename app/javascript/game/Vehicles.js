@@ -9,27 +9,20 @@ import { casts } from "game/Shadows"
 // The mesh builders honour the contract the suspension and the effects expect: userData.wheels (a pivot per wheel
 // at its corner, with its radius), userData.lights (head and tail materials) and userData.flames (exhaust sprites).
 export const VEHICLES = [
-  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Eén raket per druk op E, tien op een volle turbometer.",
+  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar. Eén raket per druk op E, tien op een volle turbometer \u2014 en zwiep met de handrem je stormram naar achteren tegen een muur.",
     maxSpeed: 32, accel: 11, brakeForce: 20, maxSteer: 0.6, wheelbase: 1.9, track: 1.4, length: 2.6,
-    side: 1, bottom: 1, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },
+    side: 1, bottom: 1, rear: 8, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },   // rear: the ram, mid-drift
     mass: 350, com: 0.45, grip: 1.0, bite: 0.25,           // kg, centre of mass above the contact patch
     body: { hx: 0.6, hy: 0.42, hz: 1.1, y: 0.76, z: 0.2 }, // the hull, clear of the ground: the wheels carry the car
     smashMin: 13, smashPanels: 2, smashLoss: 1.4,          // it takes a proper run-up, and the wall takes it out of you
     ability: { kind: "missile", refire: 0.1, cost: 0.1, hint: "E raket" } },   // one a press, ten to a full meter
-  { id: "monster", naam: "Monstertruck", blurb: "Even snel, hoog op de wielen. Springt en verplettert wat eronder ligt; drift met je flank tegen een huis voor de meeste schade.",
-    maxSpeed: 32, accel: 9, brakeForce: 18, maxSteer: 0.5, wheelbase: 3.4, track: 2.4, length: 5.0,
-    side: 2, bottom: 4, clear: 1.0, push: false, pushMin: 0, cam: { dist: 1.25, height: 1.3 },   // flanks and lands on things
-    mass: 4000, com: 1.15, grip: 1.0, bite: 0.4,
+  { id: "monster", naam: "Monstertruck", blurb: "Hoog op de wielen met een schuifblad ervoor: veegt elke steen van de weg en beukt dwars door muren. Houd E ingedrukt voor de stuwraketten.",
+    maxSpeed: 32, accel: 9, brakeForce: 18, maxSteer: 0.5, wheelbase: 3.4, track: 2.4, length: 5.6,
+    side: 2, bottom: 4, clear: 50, push: true, pushMin: 2, bladeWidth: 3.4, cam: { dist: 1.3, height: 1.35 },
+    mass: 5500, com: 1.15, grip: 1.05, bite: 0.55,             // it is carrying a 3.4 m steel plate now
     body: { hx: 0.95, hy: 0.75, hz: 2.1, y: 1.9, z: 0.1 },
-    smashMin: 6, smashPanels: 4, smashLoss: 0.7,
+    smashMin: 4, smashPanels: 6, smashLoss: 0.5,
     ability: { kind: "thrust", hint: "E stuwraketten (ingedrukt houden)" } },
-  { id: "bulldozer", naam: "Bulldozer", blurb: "Traag, maar ramt op snelheid dwars door alles heen. Met het blad omlaag veegt hij elke steen van de weg; het blad op en neer beukt een huis extra.",
-    maxSpeed: 12, accel: 5, brakeForce: 14, maxSteer: 0.6, wheelbase: 3.2, track: 2.4, length: 5.5,
-    side: 1, bottom: 1, blade: 1.5, clear: 50, push: true, pushMin: 2, cam: { dist: 1.3, height: 1.3 },   // blade: while it is moving
-    mass: 12000, com: 0.85, grip: 1.1, bite: 1.0, bladeWidth: 3.4,   // the plate is 3.4 m across; it clears all of that
-    body: { hx: 1.2, hy: 0.6, hz: 1.8, y: 1.3, z: 0.3 },   // the hull only: the tracks are drawn to y 0.1 and would scrape
-    smashMin: 1.5, smashPanels: 7, smashLoss: 0.2,         // it is a bulldozer: it walks through walls
-    ability: { kind: "blade", refire: 0.35, cost: 0.06, hint: "E blad op/neer" } },
 ]
 const AUTO = { id: "auto", naam: "Auto", length: 4.1, wheelbase: 2.6, track: 1.6, side: 1, bottom: 1, clear: 0.4, push: false, pushMin: 0, smashMin: 13, smashPanels: 2, smashLoss: 1.4, cam: { dist: 1, height: 1 },
   mass: 1400, com: 0.5, grip: 1.0, bite: 0.3, body: { hx: 0.9, hy: 0.51, hz: 2.05, y: 0.79, z: 0 },
@@ -121,6 +114,11 @@ function makeTrike(color) {
   g.add(launcher)
   box(g, m.dark, 0.24, 0.34, 0.3, 0, 0.82, 0.15)                   // launcher mount
   g.userData.anim = { launcher, muzzle }
+  // The ram, bolted across the back. It is the one part of a trike that weighs anything, and it only ever meets a
+  // wall if you put it there on purpose — which is what the handbrake is for.
+  box(g, m.steel, 1.6, 0.26, 0.22, 0, 0.62, 1.62)                  // the bar
+  for (const x of [-0.62, 0.62]) box(g, m.steel, 0.14, 0.14, 0.55, x, 0.62, 1.35)   // the stays back to the pod
+  for (const x of [-0.45, 0.45]) box(g, m.dark, 0.16, 0.42, 0.3, x, 0.62, 1.72)     // and the knuckles that do the damage
   const wheels = [wheel(g, m.dark, 0, -1.05, 0.34, 0.2), wheel(g, m.dark, -0.7, 0.9, 0.36, 0.3), wheel(g, m.dark, 0.7, 0.9, 0.36, 0.3)]
   lamps(g, m, -1.3, 1.3, 0.7, [0], 0.3)
   return finish(g, m, wheels, flames(g, [-0.35, 0.35], 0.5, 1.35))
@@ -136,7 +134,12 @@ function makeMonster(color) {
   for (const [x, z] of [[-1.2, -1.7], [1.2, -1.7], [-1.2, 1.7], [1.2, 1.7]]) box(g, m.steel, 0.2, 0.9, 0.2, x * 0.7, 1.15, z)   // axles
   const wheels = [[-1.2, -1.7], [1.2, -1.7], [-1.2, 1.7], [1.2, 1.7]].map(([lx, lz]) => wheel(g, m.dark, lx, lz, 0.9, 0.7))
   lamps(g, m, -2.12, 2.12, 1.85, [-0.6, 0.6])
-  // the thruster nozzles and their flames, under the chassis rail at the four corners (game/Vehicle.js lights them)
+  // The blade, off the bulldozer and welded on: no arms to raise it with, because that hand is holding the jets now.
+  // It hangs low enough to scrape the road under metre-high wheels.
+  for (const x of [-1.1, 1.1]) box(g, m.steel, 0.2, 0.2, 2.6, x, 1.15, -2.2)          // arms down to the plate
+  box(g, m.steel, 3.4, 1.5, 0.28, 0, 0.85, -3.35)                                     // the plate
+  for (const x of [-1.5, 1.5]) box(g, m.steel, 0.18, 0.9, 0.5, x, 0.72, -3.15)        // the wings that hold it
+  box(g, m.dark, 3.2, 0.16, 0.16, 0, 0.16, -3.46)                                     // the cutting edge along the bottom
   const jets = []
   for (const [x, z] of [[-0.7, -1.5], [0.7, -1.5], [-0.7, 1.5], [0.7, 1.5]]) {
     const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.32, 8), m.dark)
@@ -148,21 +151,4 @@ function makeMonster(color) {
   return finish(g, m, wheels, flames(g, [-0.5, 0.5], 1.5, 2.3), jets)
 }
 
-// a bulldozer: a squat hull on tracks, a cab, and a blade on two arms out front
-function makeBulldozer(color) {
-  const g = new THREE.Group(), m = materials(color)
-  box(g, m.yellow, 2.4, 1.2, 3.6, 0, 1.3, 0.3)
-  box(g, m.paint, 1.8, 1.2, 1.6, 0, 2.5, 0.5)
-  box(g, m.glass, 1.6, 0.6, 0.15, 0, 2.6, -0.32)
-  for (const x of [-1.35, 1.35]) box(g, m.dark, 0.7, 1.0, 4.0, x, 0.6, 0.2)
-  const blade = new THREE.Group(); g.add(blade)                                                     // lifts on E
-  for (const x of [-1.2, 1.2]) box(blade, m.steel, 0.16, 0.16, 2.2, x, 0.9, -1.7)                  // arms
-  box(blade, m.steel, 3.4, 1.2, 0.25, 0, 0.75, -2.85)                                              // the blade
-  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.0, 8), m.dark); pipe.position.set(0.8, 2.4, 1.0); g.add(pipe)
-  const wheels = [[-1.35, -1.5], [1.35, -1.5], [-1.35, 1.5], [1.35, 1.5]].map(([lx, lz]) => wheel(g, m.dark, lx, lz, 0.5, 0.5, false))
-  lamps(g, m, -2.98, 2.1, 2.7, [-0.6, 0.6], 0.3)
-  g.userData.anim = { blade }
-  return finish(g, m, wheels)
-}
-
-const BUILDERS = { auto: makeCarMesh, trike: makeTrike, monster: makeMonster, bulldozer: makeBulldozer }
+const BUILDERS = { auto: makeCarMesh, trike: makeTrike, monster: makeMonster }
