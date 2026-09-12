@@ -3,29 +3,34 @@ import { TUNING as T, expDamp } from "game/Tuning"
 import { Suspension } from "game/Suspension"
 import { makeVehicleMesh } from "game/Vehicles"
 
-// Arcade car. yaw = 0 faces north (-z); positive yaw turns left. Velocity lives in the body frame: `speed` along the
-// heading (the signed scalar Combat reads and writes) and `lateral` along the right-hand vector. Each step the nose
-// turns, the world velocity is re-projected onto the new heading — which turns some forward speed into sideways
-// speed — and grip bleeds the sideways part away. At full grip that is the old bicycle model; in a drift (handbrake
-// while turning at speed, or a hard turn at high speed) the rear grip drops, the car slides at an angle and keeps
-// rotating on its own; counter-steer trims the angle. Releasing a charged drift pays out a mini-turbo. Shift burns
-// the nitro meter; road pads refill it. The frame runs integrate() (input → speed, heading, position), lets Combat
-// push the car out of whatever it hit, then settle() (suspension: terrain contact and body attitude). The vehicle
-// spec (Vehicles.js) sets the size, the physics constants and the mesh; setSpec swaps all of it in place.
-// The car can leave the ground, arcade style: fast over a crest (it was climbing, now the ground descends) or off a
-// ledge, it launches with the recent climb rate scaled up plus a pop that grows with speed; the monster truck jumps
-// on command. In the air it keeps its velocity, throttle and steering do next to nothing, the nose follows the arc,
-// and the landing compresses the suspension.
-const SUBSTEP = 1 / 120
-const GRAVITY = 10                   // m/s²: a touch lighter than Earth, for hang time
-const JUMP = { minSpeed: 10, climb: 0.8, ledge: 0.3, gain: 1.8, pop: 0.08 }   // m/s of climb a crest needs, m of step, ×climb, ×speed
+// The car, as a rigid body. yaw = 0 faces north (-z); positive yaw turns left.
+//
+// This module used to integrate the car itself — body-frame velocity, a grip coefficient, a yaw-rate target and a
+// heuristic that guessed when a hill had thrown it into the air. It does none of that now. The chassis is a dynamic
+// body in the same Rapier world the debris falls in, held up by one raycast per wheel (game/Physics.js), and what is
+// left here is the driver: throttle becomes engine force, brake becomes brake torque, the handbrake drops the rear
+// tyres' grip until the back steps out, and drag is a force like any other. Dive, squat, roll, a wheel dropping into
+// a gutter and landing on your roof are all consequences now rather than effects.
+//
+// The frame is in two halves, either side of the solver. `command()` says what the driver wants; `physics.update()`
+// steps the world; `sync()` reads the chassis back into the fields the rest of the game knows (x, y, z, yaw, speed)
+// and poses the mesh. Anything that moves the car without driving it — a teleport, R, the border burn — has to go
+// through `place()`, or the solver reads the jump as a velocity.
+//
+// What survives from the arcade model is the part that was a scoring system rather than physics: the drift charge
+// levels, the mini-turbo payout and the nitro meter. Those read the real slip angle now, but the numbers are the
+// ones that were tuned.
+const _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, "YXZ"), _v = new THREE.Vector3()
+const _up = new THREE.Vector3(0, 1, 0)
 
 export class Vehicle {
-  constructor(spawn, spec) {
+  constructor(spawn, spec, physics) {
+    this.physics = physics
     this.braking = false
     this.darkness = 0
     this.wheelWorld = []          // [{x, y, z}] ground contact of each wheel, filled by the suspension
     this.boostMeter = 0.5         // survives resets
+    this.st = {}                  // what physics.read fills in: pose, velocity, wheels down
     // two spotlights for the player's own car light up the road ahead at night
     this.spots = [-0.6, 0.6].map((x) => {
       const spot = new THREE.SpotLight(0xfff3d6, 0, 65, 0.5, 0.65, 1.7)
@@ -46,6 +51,7 @@ export class Vehicle {
     this.accel = spec.accel ?? T.car.accel
     this.brakeForce = spec.brakeForce ?? T.car.brakeForce
     this.maxSteer = spec.maxSteer ?? T.car.maxSteer
+    this.mass = spec.mass ?? 1400
     this.mesh = makeVehicleMesh(spec.id)
     this.lights = this.mesh.userData.lights
     this.susp = new Suspension(this.mesh)
@@ -68,124 +74,153 @@ export class Vehicle {
   updateTail() { this.lights.tail.emissiveIntensity = this.braking ? 1.9 : 0.12 + 0.7 * this.darkness }
 
   reset(spawn) {
-    this.x = spawn.x; this.z = spawn.z; this.y = 0
-    this.yaw = spawn.yaw; this.speed = 0; this.steer = 0
-    this.lateral = 0; this.vx = 0; this.vz = 0; this.yawRate = 0
-    this.grip = 1; this.slip = 0
+    this.place(spawn.x, spawn.y ?? 0, spawn.z, spawn.yaw)
+    this.steer = 0
     this.drifting = false; this.driftDir = 0; this.driftMild = false; this.driftT = 0; this.chargeLevel = 0
     this.boosting = false; this.burstT = 0; this.boostPower = 0
-    this.accLong = 0; this.accLat = 0; this.wheelAngle = 0
-    this.vy = null; this.airY = 0; this.landed = false                 // airborne: vertical speed and height, null on the ground
-    this.groundVy = 0; this.climbMax = 0; this.landImpact = 0           // how fast the ground rises under the car (smoothed), its recent peak, the last landing's speed
-    this.kickX = 0; this.kickZ = 0                                      // knockback, world m/s, dies away in a second
-    this._dt = 1 / 60; this._speedOut = 0
+    this.slip = 0; this.wheelAngle = 0
+    this.landed = false; this.landImpact = 0
+    this.wasDown = 1
     this.susp.reset()
   }
 
-  // leave the ground with vertical speed v (the monster truck's trick, and the hop an explosion gives)
-  jump(v) { if (this.vy === null) { this.vy = v; this.airY = this.y } }
+  // The one way to move the car without driving it. A dynamic body has to be told, or the solver reads a teleport as
+  // several hundred metres per second and fires the neighbourhood into orbit.
+  place(x, y, z, yaw) {
+    this.x = x; this.y = y; this.z = z; this.yaw = yaw
+    this.pitch = 0; this.roll = 0
+    this.speed = 0; this.lateral = 0; this.vx = 0; this.vz = 0; this.vy = 0; this.yawRate = 0
+    this.groundY = y
+    this.physics?.warp(x, y, z, yaw)
+    this.susp?.reset()
+  }
 
-  kick(x, z) { this.kickX += x; this.kickZ += z }
+  kick(x, z) { this.physics?.impulse(x * this.mass, 0, z * this.mass) }
+
+  // an instantaneous vertical metre-per-second, as an impulse (the monster truck's trick, and a rocket's shove)
+  jump(v) { this.physics?.impulse(0, this.mass * v, 0) }
+
+  // Back on your wheels. Real physics means you can end up on your roof, in a ditch or wedged against a wall, so
+  // every vehicle can right itself where it stands: the heading is kept, the pitch and roll go, and it is set down
+  // a little above the ground with no velocity left to carry the mess on.
+  rightUp() {
+    this.place(this.x, (this.groundY ?? this.y) + T.physics.car.dropIn, this.z, this.yaw)
+  }
+
+  // roughly which way is up, for deciding whether righting is worth offering
+  get upright() {
+    return Math.cos(this.pitch ?? 0) * Math.cos(this.roll ?? 0) > 0.35
+  }
 
   forward() { return { x: -Math.sin(this.yaw), z: -Math.cos(this.yaw) } }
 
-  update(dt, input, heightAt) { this.integrate(dt, input); this.settle(heightAt) }
+  get airborne() { return this.st.wheelsDown === 0 }
 
-  // fixed 120 Hz substeps so the slide model behaves the same at 30 and 144 fps; the car ends exactly dt ahead
-  integrate(dt, input) {
-    this._dt = dt
-    if (this.speed !== this._speedOut) this.lateral *= 0.3          // Combat bounced or slowed us: kill most of the slide
-    const n = Math.max(1, Math.ceil(dt / SUBSTEP)), h = dt / n, v0 = this.speed
-    for (let i = 0; i < n; i++) this.step(h, input)
-    this.x += this.kickX * dt; this.z += this.kickZ * dt
-    const fade = Math.exp(-dt * 2.3)
-    this.kickX *= fade; this.kickZ *= fade
-    if (this.vy !== null) { this.vy -= GRAVITY * dt; this.airY += this.vy * dt }
-    this.accLong = expDamp(this.accLong, (this.speed - v0) / dt, T.susp.accelSmooth, dt)
-    this.accLat = expDamp(this.accLat, -this.speed * this.yawRate, T.susp.accelSmooth, dt)   // +right
-    this._speedOut = this.speed
-    const braking = (input.brake && this.speed > 0.5) || (input.handbrake && Math.abs(this.speed) > 0.5)
+  // ---- half one: what the driver is asking for ---------------------------------------------------------------
+
+  command(dt, input) {
+    const P = this.physics
+    if (!P?.ctrl) return
+    const D = T.drift
+    P.clearForces()                                          // last frame's drag, or it piles up
+    this.updateBoost(dt, input)
+    const v = this.speed, av = Math.abs(v)
+
+    // Engine. Today's arcade model was drag-limited rather than cap-limited: `0.35 v²/maxSpeed + 0.8 = accel` set
+    // the top speed. Multiply both sides by the mass and the accelerations become forces without moving the answer,
+    // so the same numbers give the same 110/99/43 km/h. The nose is local -z, which is the way the controller calls
+    // backwards, hence the sign.
+    const boost = 1 + T.boost.accelBonus * this.boostPower
+    let engine = -input.throttle * this.mass * this.accel * boost
+    let brake = 0
+    if (input.brake) {
+      if (v > 0.5) brake = this.mass * this.brakeForce            // brake first
+      else engine = this.mass * this.accel * T.car.reverseFrac * 2  // then reverse
+    }
+    if (input.handbrake) brake = Math.max(brake, this.mass * (this.drifting ? D.handbrakeDecel : 12))
+    // A real car in neutral rolls down a hill, which is true but reads as the handbrake being broken. Hands off the
+    // controls below walking pace and it holds where it is.
+    if (!input.throttle && !input.brake && av < T.car.holdBelow) brake = Math.max(brake, this.mass * T.car.hold)
+
+    // Drag, as a force on the chassis: the quadratic term that sets the top speed plus constant rolling resistance.
+    // Only while a wheel is down — in the air there is nothing to roll on.
+    if (!this.airborne && av > 0.01) {
+      const f = this.forward()
+      const d = this.mass * (T.car.drag * av * av / this.maxSpeed + T.car.roll + (this.drifting ? D.slideDrag : 0)) * Math.sign(v)
+      P.force(-f.x * d, 0, -f.z * d)
+    }
+
+    // Steering: the same lock curve, less at speed and more in a drift. Input +1 is left (A), which is +yaw, and
+    // that is the way the controller counts too.
+    const lock = this.maxSteer * (this.drifting ? D.steerLockBonus : 1) / (1 + av / 18)
+    this.steer = expDamp(this.steer, input.steer * lock, T.car.steerRate, dt)
+
+    // The handbrake is the drift: drop what the rear tyres can hold and the back steps out for real.
+    const grip = (this.spec.grip ?? 1) * T.physics.car.frictionSlip
+    const rear = input.handbrake && av > D.minSpeed ? grip * T.physics.car.handbrakeSlip : grip
+
+    P.drive({ engine, brake, steer: this.steer, slip: grip, rearSlip: rear })
+
+    const braking = (input.brake && v > 0.5) || (input.handbrake && av > 0.5)
     if (braking !== this.braking) { this.braking = braking; this.updateTail() }
   }
 
-  step(h, input) {
-    const D = T.drift
-    let f = this.forward(), rx = -f.z, rz = f.x
-    const wx = f.x * this.speed + rx * this.lateral, wz = f.z * this.speed + rz * this.lateral   // world velocity
+  // ---- half two: where the solver put it --------------------------------------------------------------------
 
-    this.updateBoost(h, input)
-    const cap = this.maxSpeed * (1 + T.boost.speedBonus * this.boostPower)
-    const accel = this.accel * (1 + T.boost.accelBonus * this.boostPower)
+  sync(dt, heightAt) {
+    const P = this.physics
+    if (!P?.ctrl) return
+    const st = P.read(this.st)
+    this.x = st.x; this.y = st.y; this.z = st.z
+    _q.set(st.qx, st.qy, st.qz, st.qw)
+    _e.setFromQuaternion(_q)
+    this.yaw = _e.y; this.pitch = _e.x; this.roll = _e.z
+    this.yawRate = st.wy
 
-    // longitudinal
-    let v = this.speed
-    const drag = 0.35 * v * Math.abs(v) / this.maxSpeed + 0.8 * Math.sign(v)
-    let a = input.throttle * accel - drag
-    if (input.brake) a -= v > 0.5 ? this.brakeForce : this.accel * 0.6            // brake, then reverse
-    if (input.handbrake) a -= (this.drifting ? D.handbrakeDecel : 12) * Math.sign(v)
-    if (this.drifting) a -= D.slideDrag * Math.sign(v)
-    if (this.vy !== null) a = -0.1 * drag                                            // wheels in the air: nothing to push against
-    v += a * h
-    if (v > cap) v = expDamp(v, cap, T.boost.overspeedBleed, h)
-    v = Math.max(v, -this.maxSpeed * T.car.reverseFrac)
-    if (Math.abs(v) < 0.05 && !input.throttle && !input.brake) v = 0
+    const f = this.forward(), rx = -f.z, rz = f.x
+    this.vx = st.vx; this.vz = st.vz; this.vy = st.vy
+    this.speed = st.vx * f.x + st.vz * f.z
+    this.lateral = st.vx * rx + st.vz * rz
+    this.slip = Math.atan2(this.lateral, Math.max(Math.abs(this.speed), 0.5))
+    this.groundY = heightAt ? heightAt(this.x, this.z) : this.y
 
-    // steering: less lock at speed, more in a drift, smoothed; the tyres can only supply maxLatAccel of cornering
-    const lock = this.maxSteer * (this.drifting ? D.steerLockBonus : 1) / (1 + Math.abs(v) / 18) * (this.vy !== null ? 0.15 : 1)
-    this.steer = expDamp(this.steer, input.steer * lock, T.car.steerRate, h)
-    const kinFree = (v / this.wheelbase) * Math.tan(this.steer)                      // what the front wheels ask for
-    const maxYaw = D.maxLatAccel / Math.max(Math.abs(v), 1)
-    const kinYawRate = clamp(kinFree, -maxYaw, maxYaw)
+    // Landing. Airborne is simply no wheel touching anything, so a jump, a ramp off a collapsing wall and being
+    // flipped by a rocket all come out the same way, and the impact is the vertical speed the solver actually had.
+    const down = st.wheelsDown
+    if (down > 0 && this.wasDown === 0) {
+      this.landImpact = Math.max(0, -this.fellAt)
+      this.landed = true
+    }
+    if (down === 0) this.fellAt = st.vy
+    this.wasDown = down
 
-    // drift state machine
-    const fast = v > D.minSpeed, steering = input.steer !== 0
-    const latDemand = Math.abs(v * kinFree)                                          // centripetal accel the tyres must supply
-    if (!this.drifting) {
-      if (fast && input.handbrake && steering) this.startDrift(Math.sign(input.steer), false)
-      else if (v > D.naturalDrift.minSpeed && latDemand > D.naturalDrift.latAccel) this.startDrift(Math.sign(this.steer) || 1, true)
-    } else if (!fast) this.endDrift(false)
-    else if (!this.driftMild && !input.handbrake) this.endDrift(true)                // release → mini-turbo
-    else if (this.driftMild && input.handbrake && steering) { this.driftMild = false; this.driftDir = Math.sign(input.steer); this.driftT = 0 }
-    else if (this.driftMild && latDemand < D.naturalDrift.latAccel * 0.6) this.endDrift(false)
+    this.drift(dt)
+    this.susp.update(this, _q, dt)
+  }
 
-    const gripTarget = this.drifting ? (this.driftMild ? D.gripMild : D.gripDrift) : D.gripNormal
-    this.grip = expDamp(this.grip, gripTarget, gripTarget < this.grip ? D.gripInRate : D.gripOutRate, h)
-
-    // yaw: kinematic when gripping; in a drift the steer counts more and the car keeps rotating on its own, so
-    // steering into the slide grows the angle and counter-steering shrinks it
-    let yawTarget = kinYawRate
-    if (this.drifting && !this.driftMild) yawTarget = clamp(kinFree * D.yawGain, -D.driftMaxYaw, D.driftMaxYaw) + this.driftDir * D.yawSustain * Math.min(1, v / 20)
-    this.yawRate = expDamp(this.yawRate, yawTarget, this.drifting ? D.yawRateSmooth.drift : D.yawRateSmooth.grip, h)
-    this.yaw += this.yawRate * h
-
-    // re-project the world velocity onto the new heading; grip bleeds the sideways part away, and most of what it
-    // bleeds is redirected forward (arcade: turning costs little speed, sliding costs some)
-    f = this.forward(); rx = -f.z; rz = f.x
-    const mag = Math.hypot(wx, wz)
-    let vLong = wx * f.x + wz * f.z, vLat = wx * rx + wz * rz
-    this.slip = Math.atan2(vLat, Math.max(Math.abs(vLong), 0.5))
-    let damp = D.latDampMax * this.grip
-    if (Math.abs(this.slip) > D.maxSlip) damp += 6                                   // spin-out guard
-    vLat *= Math.max(0, 1 - damp * h)
-    if (Math.abs(vLat) < 0.02) vLat = 0
-    const lost = mag - Math.hypot(vLong, vLat)
-    if (lost > 0) vLong += Math.sign(vLong || v || 1) * lost * (this.drifting ? D.redirect.drift : D.redirect.grip)
-    vLong += v - this.speed                                                          // this step's longitudinal acceleration
-
-    this.speed = vLong; this.lateral = vLat
-    this.vx = f.x * vLong + rx * vLat; this.vz = f.z * vLong + rz * vLat
-    this.x += this.vx * h; this.z += this.vz * h
-
-    if (this.drifting && !this.driftMild && Math.abs(this.slip) > D.chargeSlip) {
-      this.driftT += h
+  // The drift state machine and its mini-turbo, kept as it was tuned — but reading the slip angle the tyres are
+  // really running at instead of a bookkept one.
+  drift(dt) {
+    const D = T.drift, v = this.speed, slip = Math.abs(this.slip)
+    const fast = v > D.minSpeed
+    if (!fast || this.airborne) {
+      if (this.drifting) this.endDrift(false)
+    } else if (!this.drifting) {
+      if (slip > D.chargeSlip) this.startDrift(Math.sign(this.slip) || 1, slip < D.mildSlip)
+    } else if (slip < D.chargeSlip * 0.6) {
+      this.endDrift(!this.driftMild)                                   // hooked up again: pay out if it was a real one
+    } else if (this.driftMild && slip > D.mildSlip) {
+      this.driftMild = false; this.driftT = 0
+    }
+    if (this.drifting && !this.driftMild && slip > D.chargeSlip) {
+      this.driftT += dt
       this.chargeLevel = D.chargeLevels.filter((t) => this.driftT >= t).length
     }
-    this.wheelAngle += (vLong / T.susp.wheelRadius) * h
   }
 
   startDrift(dir, mild) { this.drifting = true; this.driftDir = dir || 1; this.driftMild = mild; this.driftT = 0; this.chargeLevel = 0 }
 
-  // payout: a released handbrake drift converts its charge into a free burst and meter; a slow-down or a hit does not
+  // payout: a released drift converts its charge into a free burst and meter; a slow-down or a hit does not
   endDrift(payout) {
     if (payout && this.chargeLevel > 0) this.addBoost(this.chargeLevel * T.boost.meterPerLevel, T.boost.burst[this.chargeLevel])
     this.drifting = false; this.driftMild = false; this.driftT = 0; this.chargeLevel = 0
@@ -204,40 +239,10 @@ export class Vehicle {
     this.boostPower = expDamp(this.boostPower, this.boosting ? 1 : 0, B.powerSmooth, h)
   }
 
-  // Terrain contact and body attitude via the suspension; car.y stays the ground height under the centre. A grounded
-  // car launches when the ground drops away below the arc its vertical speed would carry it on; an airborne car
-  // floats its mesh above the ground, nose along the arc, until it comes back down onto the springs.
-  settle(heightAt) {
-    const dt = this._dt, prevY = this.y
-    this.susp.update(this, heightAt, dt)
-    if (this.vy === null) {
-      const inst = (this.y - prevY) / dt, hspeed = Math.hypot(this.vx, this.vz), step = prevY - this.y
-      const crest = inst < -0.2 && this.climbMax > JUMP.climb
-      if (step < 5 && hspeed > JUMP.minSpeed && (crest || step > JUMP.ledge)) {
-        this.vy = (crest ? this.climbMax : 0) * JUMP.gain + JUMP.pop * hspeed
-        this.airY = prevY
-        this.climbMax = 0
-      } else {
-        this.groundVy = expDamp(this.groundVy, inst, 8, dt)                          // a curb is one frame of spike: it barely registers
-        if (inst > 0.05) this.climbMax = Math.max(this.climbMax, Math.min(this.groundVy, 5))   // the steepest part of the hill decides the jump
-        else this.climbMax *= 1 - 1.5 * dt                                             // and fades on a plateau
-      }
-      return
-    }
-    if (this.airY <= this.y && this.vy < 0) {
-      this.landImpact = -this.vy; this.vy = null; this.landed = true; this.groundVy = this.climbMax = 0
-      this.susp.hv = Math.min(this.susp.hv, -this.landImpact * 0.6)                   // the springs take the hit
-      return
-    }
-    this.mesh.position.y += this.airY - this.y
-    this.mesh.rotation.x = Math.atan2(this.vy, Math.max(4, Math.hypot(this.vx, this.vz))) * 0.9
-  }
-
   get smoking() { return this.drifting && Math.abs(this.slip) > T.fx.smokeSlip }
 
   state() {
-    return { x: this.x, y: this.vy === null ? this.y : this.airY, z: this.z, yaw: this.yaw, speed: this.speed, brake: this.braking, drift: this.smoking, boost: this.boostPower > 0.3, vehicle: this.spec.id }
+    return { x: this.x, y: this.y, z: this.z, yaw: this.yaw, pitch: this.pitch, roll: this.roll,
+             speed: this.speed, brake: this.braking, drift: this.smoking, boost: this.boostPower > 0.3, vehicle: this.spec.id }
   }
 }
-
-function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v }

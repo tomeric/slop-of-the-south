@@ -1,11 +1,14 @@
+import * as THREE from "three"
 import { TUNING as T } from "game/Tuning"
 
-// Spring-damper body over four wheels. Each wheel samples the ground at its own corner and rests on it; the body
-// floats on a heave spring (height) and an attitude spring (pitch, roll) whose targets come from the ground under
-// the wheels plus the car's acceleration: throttle lifts the nose, braking dives, cornering and drifting lean the
-// body outward. Front wheels show the steer angle, all wheels spin with the road speed.
-// The car's `y` stays the mean ground height under the wheels (Combat, beacons and placement rely on it); only the
-// mesh gets the sprung height and attitude.
+// Where the car is drawn. This used to be a simulation: four samples of the ground, a spring-damper for heave and
+// two more for pitch and roll, with dive and squat faked from the car's own acceleration. All of that is real now —
+// the chassis is a rigid body and each wheel is a raycast with a spring on it (game/Physics.js) — so this module
+// only reads it back. The body takes the chassis pose exactly; each wheel pivot sits at the length its own spring
+// has been compressed to, and spins at the rate its own radius says, which is also the end of the old bug where
+// every wheel span at 0.33 m and the monster truck's metre-high tyres turned nearly three times too fast.
+const _m = new THREE.Matrix4(), _v = new THREE.Vector3()
+
 export class Suspension {
   constructor(mesh) {
     this.mesh = mesh
@@ -13,58 +16,30 @@ export class Suspension {
     this.reset()
   }
 
-  reset() { this.h = null; this.hv = 0; this.pitch = 0; this.pv = 0; this.roll = 0; this.rv = 0 }
+  reset() { this.spin = this.wheels.map(() => 0) }
 
-  // car: { x, z, yaw, wheelbase, track, accLong, accLat, steer, wheelAngle, wheelWorld?, y (written) }
-  update(car, heightAt, dt) {
-    const S = T.susp
-    const f = { x: -Math.sin(car.yaw), z: -Math.cos(car.yaw) }, rx = -f.z, rz = f.x
-    const gC = heightAt(car.x, car.z)
-    let sum = 0, front = 0, rear = 0, left = 0, right = 0
-    const g = new Array(this.wheels.length)
+  update(car, quat, dt) {
+    const ctrl = car.physics?.ctrl
+    this.mesh.position.set(car.x, car.y, car.z)
+    this.mesh.quaternion.copy(quat)
+    if (!ctrl) return
+    this.mesh.updateMatrixWorld()
     for (let i = 0; i < this.wheels.length; i++) {
       const w = this.wheels[i]
-      const wx = car.x + rx * w.lx - f.x * w.lz, wz = car.z + rz * w.lx - f.z * w.lz      // local -z is forward
-      let gi = heightAt(wx, wz)
-      if (Math.abs(gi - gC) > S.maxCornerDrop) gi = gC                                    // unloaded tile or seam spike
-      g[i] = gi; sum += gi
-      if (w.front) front += gi; else rear += gi
-      if (w.lx < 0) left += gi; else right += gi
-      if (car.wheelWorld) car.wheelWorld[i] = { x: wx, y: gi, z: wz }
-    }
-    const n = this.wheels.length || 1
-    const gY = this.wheels.length ? sum / n : gC
-    const gPitch = this.wheels.length ? Math.atan2(front / (n / 2) - rear / (n / 2), car.wheelbase) : 0
-    const gRoll = this.wheels.length ? Math.atan2(right / (n / 2) - left / (n / 2), car.track) : 0
-    car.y = gY
-
-    const pitchT = clamp(gPitch + S.pitchPerAccel * (car.accLong ?? 0), -S.maxPitch, S.maxPitch)
-    const rollT = clamp(gRoll + S.rollPerAccel * (car.accLat ?? 0), -S.maxRoll, S.maxRoll)
-
-    if (this.h === null) { this.h = gY; this.pitch = gPitch; this.roll = gRoll; this.hv = this.pv = this.rv = 0 }   // (re)seed after a reset or teleport
-    const steps = dt > 1 / 60 ? 2 : 1, hh = dt / steps
-    const wH = 2 * Math.PI * S.heaveHz, kH = wH * wH, cH = 2 * S.heaveZeta * wH
-    const wA = 2 * Math.PI * S.attitudeHz, kA = wA * wA, cA = 2 * S.attitudeZeta * wA
-    for (let s = 0; s < steps; s++) {
-      this.hv += (kH * (gY - this.h) - cH * this.hv) * hh; this.h += this.hv * hh
-      this.pv += (kA * (pitchT - this.pitch) - cA * this.pv) * hh; this.pitch += this.pv * hh
-      this.rv += (kA * (rollT - this.roll) - cA * this.rv) * hh; this.roll += this.rv * hh
-    }
-    this.h = clamp(this.h, gY - S.travel, gY + S.travel)
-
-    this.mesh.position.set(car.x, this.h, car.z)
-    this.mesh.rotation.set(this.pitch, car.yaw, this.roll, "YXZ")
-
-    // wheels rest on their own ground; the body corner above them moves with the springs
-    const sp = Math.sin(this.pitch), sr = Math.sin(this.roll)
-    for (let i = 0; i < this.wheels.length; i++) {
-      const w = this.wheels[i]
-      const cornerY = this.h - w.lz * sp + w.lx * sr
-      w.pivot.position.y = (w.r ?? S.wheelRadius) + clamp(g[i] - cornerY, -S.travel, S.travel)
+      const r = w.r ?? T.susp.wheelRadius
+      // the spring's current length puts the hub where the ray says the ground is; clamped, because a wheel over a
+      // cliff edge reports the whole ray and would stretch the model out of its arches
+      const len = ctrl.wheelSuspensionLength(i)
+      const drop = Math.max(-T.susp.travel, Math.min(T.susp.travel, T.physics.car.rest - len))
+      w.pivot.position.y = r + drop
       w.pivot.rotation.y = w.front ? (car.steer ?? 0) : 0
-      w.mesh.rotation.x = -(car.wheelAngle ?? 0)                                         // axle is local x; forward roll is negative
+      this.spin[i] += (car.speed / r) * dt                       // its own radius, not one shared number
+      w.mesh.rotation.x = -this.spin[i]
+      if (car.wheelWorld) {
+        w.pivot.getWorldPosition(_v)
+        car.wheelWorld[i] = { x: _v.x, y: _v.y - r, z: _v.z }
+      }
     }
+    car.wheelAngle = this.spin[0] ?? 0
   }
 }
-
-function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v }

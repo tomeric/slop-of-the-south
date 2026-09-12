@@ -67,12 +67,19 @@ export class Physics {
       this.R = R
       this.world = new R.World({ x: 0, y: T.physics.gravity, z: 0 })
       this.world.timestep = T.physics.step
-      this.buildChips()
+      if (this.scene) this.buildChips()
       for (const tile of this.waiting) this.addTile(tile)
       this.waiting.length = 0
       this.stats.bootMs = Math.round(performance.now() - t0)
     })()
     return this.loading
+  }
+
+  // The engine compiles while the world request is still in flight, so the boot starts before there is a scene to
+  // hang the debris mesh in. Whichever of the two finishes second builds the pool.
+  setScene(scene) {
+    this.scene = scene
+    if (this.world && !this.chips.length) this.buildChips()
   }
 
   get ready() { return !!this.world }
@@ -345,44 +352,130 @@ export class Physics {
 
   // ---- the car --------------------------------------------------------------------------------------------------
 
-  // A kinematic box: it pushes debris at the speed it is really travelling and debris cannot push it back. The size
-  // comes off the mesh because the vehicle specs carry a length and a track but no width or height.
-  setCar(mesh) {
+  // ---- the vehicle -------------------------------------------------------------------------------------------
+
+  // A real chassis: one dynamic body carrying the hull, and Rapier's raycast vehicle controller (Bullet's
+  // btRaycastVehicle, port and all) casting a ray per wheel to hold it up. The wheels come off the mesh, so the
+  // wheels that are drawn are the wheels that touch the ground — which is also what finally gives the three-wheeled
+  // trike an honest attitude instead of the four-wheel average that pinned it at both clamps.
+  //
+  // The body's origin sits at the contact patch, where the meshes are authored, so `body.translation()` is the same
+  // point the arcade model called (x, y, z) and nothing downstream has to learn a new anchor. Mass is declared
+  // rather than derived: the collider has no density, and `setAdditionalMassProperties` carries the spec's mass, a
+  // centre of mass dropped to about axle height (a box's own centroid rolls it over in every corner), and the
+  // inertia of a box that size.
+  setVehicle(spec, mesh) {
     if (!this.world) return
-    const box = new THREE.Box3().setFromObject(mesh)
-    box.getSize(_v)
-    if (this.car) this.world.removeRigidBody(this.car)
-    this.carHalf = _v.clone().multiplyScalar(0.5)
-    this.car = this.world.createRigidBody(this.R.RigidBodyDesc.kinematicPositionBased())
-    this.world.createCollider(this.R.ColliderDesc.cuboid(this.carHalf.x, this.carHalf.y, this.carHalf.z)
-      .setCollisionGroups(GROUP.car), this.car)
+    this.dropVehicle()
+    const b = spec.body ?? { hx: 0.9, hy: 0.5, hz: 2, y: 0.8, z: 0 }
+    const m = spec.mass ?? 1400
+    const chassis = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic()
+      .setTranslation(0, 0, 0).setCcdEnabled(true)
+      .setLinearDamping(0).setAngularDamping(T.physics.car.angularDamping)
+      .setAdditionalMassProperties(m, { x: 0, y: spec.com ?? b.y, z: b.z },
+        { x: m * (b.hy * b.hy + b.hz * b.hz) / 3, y: m * (b.hx * b.hx + b.hz * b.hz) / 3, z: m * (b.hx * b.hx + b.hy * b.hy) / 3 },
+        IDENTITY))
+    this.world.createCollider(this.R.ColliderDesc.cuboid(b.hx, b.hy, b.hz)
+      .setTranslation(0, b.y, b.z).setDensity(0)
+      .setFriction(T.physics.car.hullFriction).setRestitution(0)
+      .setCollisionGroups(GROUP.car)
+      .setActiveEvents(this.R.ActiveEvents.CONTACT_FORCE_EVENTS)
+      .setContactForceEventThreshold(T.physics.car.contactForce), chassis)
+
+    const ctrl = this.world.createVehicleController(chassis)
+    const C = T.physics.car
+    const wheels = mesh.userData.wheels ?? []
+    for (const w of wheels) {
+      const r = w.r ?? T.susp.wheelRadius
+      ctrl.addWheel({ x: w.lx, y: r + C.rest, z: w.lz }, { x: 0, y: -1, z: 0 }, { x: -1, y: 0, z: 0 }, C.rest, r)
+    }
+    // Bullet's suspension numbers are its own: stiffness and damping are not N/m and Ns/m but scale with the
+    // sprung weight the solver works out per wheel, so they are given straight rather than derived from the
+    // spring-and-damper constants the old fake suspension used.
+    const corner = m * Math.abs(T.physics.gravity) / Math.max(1, wheels.length)
+    for (let i = 0; i < wheels.length; i++) {
+      ctrl.setWheelSuspensionStiffness(i, C.stiffness)
+      ctrl.setWheelSuspensionCompression(i, C.compression)
+      ctrl.setWheelSuspensionRelaxation(i, C.relaxation)
+      ctrl.setWheelMaxSuspensionTravel(i, T.susp.travel)
+      ctrl.setWheelMaxSuspensionForce(i, corner * C.forceHeadroom)
+      ctrl.setWheelFrictionSlip(i, (spec.grip ?? 1) * C.frictionSlip)
+      ctrl.setWheelSideFrictionStiffness(i, C.sideStiffness)
+    }
+    this.chassis = chassis
+    this.ctrl = ctrl
+    this.spec = spec
+    this.wheels = wheels
+    this.car = chassis                                  // the name the rest of the module already knows it by
   }
 
-  // a teleport is not a movement: set it hard, or the solver reads the jump as a velocity
-  warp(car) {
-    if (!this.car) return
-    this.car.setTranslation({ x: car.x, y: car.y + this.carHalf.y, z: car.z }, false)
-    this.car.setRotation(_q.setFromAxisAngle(_up, car.yaw), false)
+  // What the driver is asking for, in newtons and radians. Called once a frame from game/Vehicle.js; the controller
+  // holds the values until they are changed, so the same numbers apply to every substep.
+  drive({ engine = 0, brake = 0, steer = 0, slip = null, rearSlip = null }) {
+    const ctrl = this.ctrl
+    if (!ctrl) return
+    const wheels = this.wheels
+    const driven = wheels.filter((w) => !w.front).length || wheels.length
+    for (let i = 0; i < wheels.length; i++) {
+      const w = wheels[i]
+      const drives = wheels.length === driven || !w.front
+      ctrl.setWheelEngineForce(i, drives ? engine / driven : 0)
+      ctrl.setWheelBrake(i, brake / wheels.length)
+      ctrl.setWheelSteering(i, w.front ? steer : 0)
+      const g = (w.front ? slip : rearSlip ?? slip)
+      if (g !== null) ctrl.setWheelFrictionSlip(i, g)
+    }
+  }
+
+  // Standing forces on the chassis — drag, thrusters — and one-off impulses.
+  //
+  // Rapier's `addForce` is not a one-shot: it keeps applying every step until it is reset, which is exactly what a
+  // standing force wants (it reaches every substep, not just the first) but means the driver has to clear last
+  // frame's before setting this frame's. Forget that and the drag accumulates frame on frame until it strangles
+  // the engine, which is what the first version of this did.
+  clearForces() { this.chassis?.resetForces(false); this.chassis?.resetTorques(false) }
+  force(x, y, z) { this.chassis?.addForce({ x, y, z }, true) }
+  forceAt(x, y, z, px, py, pz) { this.chassis?.addForceAtPoint({ x, y, z }, { x: px, y: py, z: pz }, true) }
+  torque(x, y, z) { this.chassis?.addTorque({ x, y, z }, true) }
+  impulse(x, y, z) { this.chassis?.applyImpulse({ x, y, z }, true) }
+
+  // Where the chassis has got to: the pose to draw and the state the game reasons about.
+  read(out) {
+    const c = this.chassis
+    if (!c) return null
+    const p = c.translation(), r = c.rotation(), v = c.linvel(), a = c.angvel()
+    out.x = p.x; out.y = p.y; out.z = p.z
+    out.qx = r.x; out.qy = r.y; out.qz = r.z; out.qw = r.w
+    out.vx = v.x; out.vy = v.y; out.vz = v.z
+    out.wy = a.y
+    out.wheelsDown = 0
+    for (let i = 0; i < this.wheels.length; i++) if (this.ctrl.wheelIsInContact(i)) out.wheelsDown++
+    return out
+  }
+
+  dropVehicle() {
+    if (this.ctrl) { this.world.removeVehicleController(this.ctrl); this.ctrl = null }
+    if (this.chassis) { this.world.removeRigidBody(this.chassis); this.chassis = null }
+    this.car = null
+  }
+
+  // A teleport is not a movement: set the pose hard and kill the velocity, or the solver reads the jump as several
+  // hundred metres per second and fires the neighbourhood into orbit.
+  warp(x, y, z, yaw) {
+    const c = this.chassis
+    if (!c) return
+    c.setTranslation({ x, y, z }, false)
+    c.setRotation(_q.setFromAxisAngle(_up, yaw), false)
+    c.setLinvel({ x: 0, y: 0, z: 0 }, false)
+    c.setAngvel({ x: 0, y: 0, z: 0 }, false)
+    c.wakeUp()
   }
 
   // ---- the clock ----------------------------------------------------------------------------------------------
 
-  update(dt, car) {
+  update(dt) {
     if (!this.world || !T.physics.on) return
     const t0 = performance.now()
-    // A kinematic body's velocity is inferred from how far it was told to move, so a teleport would read as several
-    // hundred metres per second and fire the neighbourhood into orbit. Anything past a frame's worth of the fastest
-    // car there is (~55 m/s) is not driving, so set it hard instead of sweeping to it. One guard here beats
-    // remembering to call `warp` at the four places that move the car.
-    if (this.car && car) {
-      const jump = this.was ? Math.hypot(car.x - this.was.x, car.z - this.was.z) : 0
-      if (!this.was || jump > T.physics.warpJump) this.warp(car)
-      else {
-        this.car.setNextKinematicTranslation({ x: car.x, y: car.y + this.carHalf.y, z: car.z })
-        this.car.setNextKinematicRotation(_q.setFromAxisAngle(_up, car.yaw))
-      }
-      this.was = { x: car.x, z: car.z }
-    }
     const h = T.physics.step
     this.world.timestep = h
     this.acc = Math.min(this.acc + dt, h * T.physics.maxSteps)
@@ -407,6 +500,14 @@ export class Physics {
   // So the terminal velocity and the smallest chip are a pair, kept about two to one apart, and `floorDrop` catches
   // whatever still gets away. Rubble falling at 11 m/s reads as heavy anyway.
   step() {
+    // The controller casts its wheel rays and applies its forces against the state the solver is about to advance,
+    // so it belongs inside the fixed step, not once a frame.
+    if (this.ctrl) {
+      this.ctrl.updateVehicle(this.world.timestep)
+      const C = T.physics.car
+      const v = this.chassis.linvel()
+      if (v.y < -C.maxFall) this.chassis.setLinvel({ x: v.x, y: -C.maxFall, z: v.z }, false)
+    }
     const cap = -T.physics.debris.maxFall
     for (const chip of this.chips) {
       if (!chip.live) continue

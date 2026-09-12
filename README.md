@@ -155,7 +155,8 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Environment.js      the ambient light, PMREM-baked from the sky DayNight draws
     game/Outline.js          the cartoon outline pass, and who opts out of it
     game/Shadows.js          the sun's shadow box, hung on the camera and snapped to whole texels (?schaduw)
-    game/Physics.js          the rigid-body world: terrain colliders, the debris pool, the car as a kinematic box
+    game/Physics.js          the rigid-body world: terrain, bridge and building colliders, the debris pool, and the
+                             car — a dynamic chassis on Rapier's raycast vehicle controller
     game/Structure.js        one building → pieces: panels with real openings, floors, partitions, stairs, roof
     game/Structures.js       which houses are built rather than painted, and the swap between the two
     game/Support.js          which piece holds which up, and what falls when one of them goes
@@ -171,9 +172,9 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/FlameWall.js        animated fire curtain along the province border; even-odd inside test for the burn-back
     game/Minimap.js          map drawn from our own data (MapBuilder → public/map): overview + 1 km detail cells;
                              M expands, drag pans, wheel zooms, F fits the bounds, click teleports
-    game/Vehicle.js          arcade car: body-frame velocity (speed + lateral), grip model, handbrake drift with
-                             mini-turbo charge, nitro meter (Shift, drift payout, road pads), shared car mesh
-    game/Suspension.js       four wheels on their own ground, spring-damped body heave/pitch/roll, wheel spin + steer
+    game/Vehicle.js          the driver: throttle/brake/steer as forces on a rigid chassis, handbrake drift, the
+                             mini-turbo charge and the nitro meter (Shift, drift payout, road pads), Q to right it
+    game/Suspension.js       reads the chassis and its wheel springs back out and poses the mesh
     game/Camera.js           spring-damped chase camera: sits behind a blend of nose and velocity, speed/boost FOV
     game/VehicleFx.js        pooled tyre smoke while sliding, exhaust flames while boosting (local and remote cars)
     game/Pickups.js          boost pads placed deterministically per tile from its roads; ring + beam, local respawn
@@ -315,7 +316,7 @@ Open http://localhost:3000 in two browser windows and drive.
 Controls: W/↑ accelerate, S/↓ brake/reverse, A/D or ←/→ steer, Space handbrake, Shift boost, E trick, V vehicle
 picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan, scroll to zoom, F fits the whole
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
-the clock, `?schaduw` turns the sun's shadow on, `?fysica=0` turns the physics off.
+the clock and `?schaduw` turns the sun's shadow on.
 
 **Near the pavement** (`game/Facades.js`): the baked facade cannot do a sill (no shadow line) or a door (no depth),
 and neither is worth a triangle at two hundred metres, so both are streamed in 125 m cells around the car, three by
@@ -429,8 +430,9 @@ with the arrears dropped rather than paid; what is left over interpolates the dr
 does not judder. Two numbers are a pair and have to stay that way: a body travels `maxFall × step` between contact
 checks and a heightfield triangle has no thickness, so the terminal velocity is held to about half the smallest
 chip — measured, dropping boxes 20 m onto a hillside, 0.30 m chips fell through at 15 m/s and 0.44 m ones did not.
-Anything that still gets away is caught by `floorDrop` and recycled. A 100-body scene steps in 0.15 ms.
-`?fysica=0` turns the whole thing off and, because the import is dynamic, does not even download the 2 MB.
+Anything that still gets away is caught by `floorDrop` and recycled — and the car has its own cap for the same
+reason, because the trike's hull is only 0.84 m thick. A 100-body scene steps in 0.15 ms. The engine used to be
+optional; now that the car is a body in it, it is not, but its 2 MB compiles while `/api/world` is in flight.
 
 **What is solid** is three tiers, because the terrain heightfield on its own is not a world you can drive in. The
 heightfield is close enough for roads — measured over 62 001 samples in a village tile, it sits a median 5 cm under
@@ -477,16 +479,25 @@ the world is looked at while working on how it looks.
 
 ### Driving
 
-- **Drift**: Space while steering above ~30 km/h kicks the rear out (`grip` drops to 0.22); steer into the slide to
-  widen it, counter-steer to trim it; let go of Space to hook up again in about 0.4 s. Sharp steering above 80 km/h
-  slides mildly on its own. The HUD shows `DRIFT` with three pips filling at 0.7 / 1.5 / 2.5 s of slide; releasing
-  pays out a mini-turbo (0.5 / 0.9 / 1.4 s of free boost plus 12 % meter per pip). A wall ends a drift without payout.
+- **The car is a rigid body.** One dynamic chassis with a declared mass and a centre of mass dropped to about axle
+  height, held up by Rapier's raycast vehicle controller: one ray per wheel, a spring on each, and the tyre forces
+  the solver works out from them. Throttle is engine force, brake is brake torque, drag is a force. The wheels are
+  the wheels on the model, so the three-wheeled trike is a three-wheeled vehicle — which is also the end of the old
+  bug where its attitude came from a four-wheel average and sat pinned at both clamps on every road in the province.
+  The numbers are the ones that were tuned: `drag · v²/maxSpeed + roll` against `mass · accel` puts the top speeds
+  back at 107 / 94 / 38 km/h, and the tyres' grip limit measures 14 m/s² of cornering, which is `maxLatAccel` to
+  two figures.
+- **Drift**: Space above ~30 km/h drops what the rear tyres can hold to a quarter and the back steps out for real;
+  steer into the slide to widen it, counter-steer to trim it. The charge is still a scoring system rather than
+  physics, and its numbers are unchanged — it just reads the slip angle the tyres are really running at. The HUD
+  shows `DRIFT` with three pips filling at 0.7 / 1.5 / 2.5 s of slide; releasing pays out a mini-turbo (0.5 / 0.9 /
+  1.4 s of free boost plus 12 % meter per pip).
 - **Boost**: Shift burns the orange meter (3 s from full, trickles back in 25 s); top speed rises 28 %, acceleration
   90 %, the camera pulls back and widens, flames come out of the exhaust. Blue rings with a light beam on straight
   stretches of through and residential roads (every 300–500 m, never on junctions or bridges) fill 35 % of the meter
   and give a short kick; they come back after 20 s (locally).
-- **Suspension**: the body floats on springs over four wheels that each rest on their own ground: it dives when braking,
-  lifts when launching, leans outward in corners and drifts, and bobs over curbs and bridge ramps.
+- **Suspension**: no longer faked. Dive, squat, roll, a wheel dropping into a gutter and landing on your roof are
+  all consequences of the springs the solver is integrating. **Q** puts you back on your wheels where you stand.
 - **Camera**: critically damped springs for position, aim and yaw; at speed it sits behind the velocity rather than the
   nose so a drift is visible; distance, height and field of view grow with speed and boost; it never sinks below the
   ground.

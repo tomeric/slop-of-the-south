@@ -8,6 +8,11 @@ export const TUNING = {
     maxSteer: 0.55,        // rad at standstill
     steerRate: 8,          // /s: how fast the wheels reach the wanted angle
     reverseFrac: 0.25,     // reverse top speed as a fraction of maxSpeed
+    // Drag, as m/s² so it reads like the rest: `drag * v²/maxSpeed + roll` is what the engine has to beat, and
+    // where the two meet is the top speed. `roll` is under the arcade model's 0.8 because a real tyre model has
+    // losses of its own that the old one did not.
+    drag: 0.35, roll: 0.5,
+    holdBelow: 1.5, hold: 12,   // hands off the controls below this speed and the brakes hold it on a slope
   },
   drift: {
     minSpeed: 8,           // m/s needed to start or hold a drift
@@ -26,6 +31,7 @@ export const TUNING = {
     slideDrag: 1.0,        // m/s² of extra drag while sliding
     maxSlip: 0.9,          // rad: past this the slide is damped extra so the car never spins out
     naturalDrift: { minSpeed: 22, latAccel: 11 },   // sharp turns at speed slide mildly on their own
+    mildSlip: 0.32,        // rad: under this the car is merely sliding, over it it is properly sideways
     chargeSlip: 0.14,      // rad of slip before drift time counts towards the turbo
     chargeLevels: [0.7, 1.5, 2.5],                  // seconds of drift → level 1, 2, 3
   },
@@ -114,6 +120,16 @@ export const TUNING = {
     // that is not built out of pieces — the overflow past `maxBuildings`, whatever is still queued, and the OSM
     // boxes that have no faces to build from. Without it a car drives straight through them.
     solid: { radius: 60, keep: 1.25, perFrame: 24, thick: 0.3, jog: 0.15 },   // jog: surveyed wiggles smaller than this are not worth a collider
+    // The chassis and its wheels (Rapier's raycast vehicle controller). Stiffness, compression and relaxation are
+    // Bullet's own units, which scale with the weight the solver puts on each wheel, so they are given straight
+    // rather than derived from `susp`. maxFall is the car's terminal velocity for the same reason the debris has
+    // one: a heightfield triangle has no thickness, and the trike's hull is only 0.84 m of it.
+    car: {
+      rest: 0.32, stiffness: 250, compression: 11, relaxation: 11, forceHeadroom: 8,
+      frictionSlip: 2.0, sideStiffness: 1.0, handbrakeSlip: 0.25,   // what the rear tyres keep on the handbrake
+      angularDamping: 0.5, hullFriction: 0.4, contactForce: 2000,
+      maxFall: 14, floorDrop: 6, dropIn: 0.4,   // dropIn: how far above the ground a teleport puts the car down
+    },
     chips: { pool: 220, size: 0.5, speed: 7, life: 30 },   // pool: reload (the bodies are made once)
     pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5 },   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points

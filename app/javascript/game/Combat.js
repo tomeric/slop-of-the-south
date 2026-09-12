@@ -55,7 +55,7 @@ export class Combat {
       const hit = this.index.hitPoint(px, pz, 0.3)
       if (!hit) continue
       const { obj, nx, nz, depth } = hit
-      if (car.vy !== null && !obj.rings) continue
+      if (car.airborne && !obj.rings) continue
       const flank = Math.abs(nx * rx + nz * rz) > Math.abs(nx * f.x + nz * f.z)               // the wall faces the side, not the nose
       if (obj.state === 1) { car.speed *= 1 - 2.5 * dt; this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
       const into0 = -(car.vx * nx + car.vz * nz)
@@ -152,7 +152,7 @@ export class Combat {
     if (a.kind === "none" || !input.ability || this.cd > 0) return
     switch (a.kind) {
       case "missile": { const f = car.forward(), rx = -f.z, rz = f.x, n = car.spec.length / 2 + 0.8; this.shoot(car.x + f.x * n + rx * 0.55, car.y + 1.05, car.z + f.z * n + rz * 0.55, f, true); break }
-      case "jump":    if (car.vy !== null) return; car.jump(JUMP.v); break
+      case "jump":    if (car.airborne) return; car.jump(JUMP.v); break
       case "blade":   this.toggleBlade(car.mesh, true); break
     }
     this.cd = a.cooldown
@@ -259,7 +259,7 @@ export class Combat {
     if (d < 1.5 * r) {
       const k = (1 - d / (1.5 * r)) * Math.min(14, dmg / 10)
       car.kick((car.x - x) / (d || 1) * k, (car.z - z) / (d || 1) * k)
-      if (k > 4 && car.vy === null) car.jump(Math.min(6, k * 0.5))
+      if (k > 4 && !car.airborne) car.jump(Math.min(6, k * 0.5))
     }
   }
 

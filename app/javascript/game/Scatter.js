@@ -403,7 +403,7 @@ export class Scatter {
 
   // a grounded car driving through a bush squashes it once, with a few leafy puffs; nothing leaves this screen
   flatten(car) {
-    if (car.vy !== null) return
+    if (car.airborne) return
     const F = T.ground.flatten, [cx, cy] = this.world.tileIndex(car.x, car.z)
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const e = this.tiles.get(`${cx + dx}_${cy + dy}`)

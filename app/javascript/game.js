@@ -35,7 +35,10 @@ import { TUNING } from "game/Tuning"
 import { Bench, SPOTS } from "game/Bench"
 
 async function main() {
-  const config = await (await fetch("/api/world")).json()
+  const physics = new Physics(null, null)                   // the rigid-body world; scene and chunks are set below
+  // The car is a rigid body now, so the engine is not optional — but its 2 MB of WebAssembly compiles while the
+  // world request is in flight, behind the loading screen, and costs nothing extra on the clock.
+  const [config] = await Promise.all([fetch("/api/world").then((r) => r.json()), physics.boot().catch((e) => console.warn("fysica:", e))])
   const homeSpawn = { ...config.spawn }      // the world spawn, kept as the fallback when a URL spawn is outside the border
   // ?spawn=x,z[,yaw] teleports to game coordinates (handy for exploring the countryside)
   let urlSpawn = false
@@ -54,11 +57,6 @@ async function main() {
   // map size recompile every program in the scene, so this is read once, here (game/Shadows.js).
   const schaduw = new URLSearchParams(location.search).get("schaduw")
   if (schaduw !== null) TUNING.light.shadow.on = schaduw !== "0"
-  // ?fysica=0 leaves the rigid-body world out entirely — and, because game/Physics.js imports the engine
-  // dynamically, does not even download the 2 MB of WebAssembly.
-  const fysica = new URLSearchParams(location.search).get("fysica")
-  if (fysica !== null) TUNING.physics.on = fysica !== "0"
-
   const container = document.getElementById("game")
   const playerId = container.dataset.playerId
   // ?name=Pietje sets the driver name other players see above your car (kept in localStorage)
@@ -84,16 +82,17 @@ async function main() {
   }
   const pickups = new Pickups()                             // boost pads, placed per tile from its roads
   const scatter = new Scatter(world.scene, effects, { heightAt: (x, z) => chunks.heightAt(x, z), tileIndex: (x, z) => chunks.tileIndex(x, z) })   // grass, bushes and reeds
-  const physics = new Physics(world.scene, null)            // the rigid-body world; `chunks` is set just below
+  physics.setScene(world.scene)                               // the engine may have finished compiling before the scene existed
   const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t); physics.addTile(t) }, onDrop: (t) => { structures.dropTile(t); index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t); physics.dropTile(t) } })
   physics.chunks = chunks
   effects.physics = physics
-  if (TUNING.physics.on) physics.boot().then(() => physics.setCar(car.mesh)).catch((e) => console.warn("fysica:", e))
   index.heightAt = (x, z) => chunks.heightAt(x, z)
   world.setHeightAt((x, z) => chunks.heightAt(x, z))
   world.physics = physics                                     // so game/Bench.js can report the step cost beside the render
   const input   = new Input()
-  const car     = new Vehicle(config.spawn, vehicleSpec(localStorage.getItem("voertuig") ?? "trike"))
+  const car     = new Vehicle(config.spawn, vehicleSpec(localStorage.getItem("voertuig") ?? "trike"), physics)
+  physics.setVehicle(car.spec, car.mesh)
+  physics.warp(car.x, car.y, car.z, car.yaw)
   let carFx     = new VehicleFx(car.mesh, effects.smoke)
   const structures = new Structures(world.scene, index, chunks, physics)   // the houses near enough to be built of pieces
   const combat  = new Combat({ scene: world.scene, index, effects, structures, physics, heightAt: (x, z) => chunks.heightAt(x, z), car, send: (action, data) => { if (vrij) { if (action === "hit") localHit(data); return } net.send(action, data) } })
@@ -114,11 +113,13 @@ async function main() {
   let placed = false          // car and camera snapped onto the terrain once the spawn tile is in
   let snapToRoad = urlSpawn   // after a map teleport or a ?spawn= URL: move onto the nearest street once its tile is in
   const teleport = (x, z, yaw = car.yaw) => { car.reset({ x, z, yaw }); placed = false; snapToRoad = true; burn(400) }
+  const putDown = (x, z, yaw) => car.place(x, chunks.heightAt(x, z) + TUNING.physics.car.dropIn, z, yaw)
   const voertuigEl = el("voertuig-naam"), hintEl = el("voertuig-hint")
   const applySpec = (spec) => {
     world.scene.remove(car.setSpec(spec)); world.scene.add(car.mesh)
     carFx = new VehicleFx(car.mesh, effects.smoke)
-    physics.setCar(car.mesh)
+    physics.setVehicle(car.spec, car.mesh)
+    physics.warp(car.x, car.y, car.z, car.yaw)
     localStorage.setItem("voertuig", spec.id)
     voertuigEl.textContent = spec.naam; hintEl.textContent = spec.ability.hint
     placed = false
@@ -231,22 +232,25 @@ async function main() {
     const upd0 = performance.now()
     if (chunks.ready(car.x, car.z)) {
       if (input.reset) { car.reset(config.spawn); placed = false }
-      if (!placed) {
+      if (input.flip) { car.rightUp(); effects.dust(car.x, car.y + 0.3, car.z, 1.6) }
+      if (!placed && physics.ctrl) {
+        let x = car.x, z = car.z, yaw = car.yaw
         if (snapToRoad) {
-          const p = nearestPointOnRoads(car.x, car.z, chunks.roadsAround(car.x, car.z))
-          if (p) { car.x = p.x; car.z = p.z; car.yaw = p.yaw }
+          const p = nearestPointOnRoads(x, z, chunks.roadsAround(x, z))
+          if (p) { x = p.x; z = p.z; yaw = p.yaw }
           snapToRoad = false
         }
-        car.y = chunks.heightAt(car.x, car.z)
-        car.mesh.position.y = car.y
+        putDown(x, z, yaw)
+        car.sync(dt, heightAt)
         world.followCamera(car, 1e3)   // huge dt → camera jumps straight behind the car instead of rising out of the ground
         placed = true
       }
-      car.integrate(dt, input)
+      // the solver sits between the two halves of the car: what the driver wants, then where it ended up
+      car.command(dt, input)
+      physics.update(dt)
+      car.sync(dt, heightAt)
       combat.enabled = vrij || round.running
       combat.collide(car, dt)
-      car.settle(heightAt)
-      physics.update(dt, car)
       combat.abilities(car, input, dt)
       carFx.update(car, dt)
       pickups.collect(car, tileIndex, onPickup)
@@ -263,8 +267,8 @@ async function main() {
         borderTimer = 0
         if (wall.inside(car.x, car.z)) lastInside = { x: car.x, z: car.z, yaw: car.yaw }
         else {
-          car.reset(lastInside ?? homeSpawn)
-          car.yaw += Math.PI                                      // turn around
+          const back = lastInside ?? homeSpawn
+          car.reset({ ...back, yaw: back.yaw + Math.PI })          // turn around
           placed = false
           burn(600)
         }

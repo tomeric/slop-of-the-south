@@ -17,6 +17,7 @@ export class Input {
   get handbrake() { return this.keys.has("Space") }
   get boost()     { return this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") }
   get reset()     { return this.consume("KeyR") }
+  get flip()      { return this.consume("KeyQ") }      // back on your wheels where you stand (F belongs to the map)
   get toggleMap() { return this.consume("KeyM") }
   get mute()      { return this.consume("KeyN") }
   get ability()   { return this.consume("KeyE") }
