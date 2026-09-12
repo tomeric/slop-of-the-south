@@ -109,8 +109,32 @@ export class Combat {
     return n
   }
 
+  // What the front of the vehicle does to the rubbish lying in the road, which is a different job from what it does
+  // to walls. `clear` is the same coefficient the rubble heaps use and spans 0.4 to 50, so a trike nudges a brick
+  // and a bulldozer clears the street — and the dozer, alone, carts off what goes under the blade instead of
+  // pushing an ever-growing pile in front of it.
+  sweep(car, dt) {
+    const spec = car.spec, v = car.speed
+    if (!this.physics?.world || !spec.clear || Math.abs(v) < 1) return
+    const D = T.physics.debris
+    const f = car.forward()
+    const reach = spec.length / 2 + D.sweepAhead
+    // A blade only clears when it is down. Nothing in the map means it has never been raised.
+    const b = this.blades.get(car.mesh)
+    const carts = spec.push === true && (!b || b.t < 0.5)
+    const push = spec.clear * D.sweepPush * Math.min(1, Math.abs(v) / 8) * dt
+    // A blade is wider than the machine, and it takes the whole swath: shove and cart at the same radius, or the
+    // rubbish is simply pushed along in front of the blade for ever and never actually cleared, which is what the
+    // first version of this did and what the complaint was.
+    const r = (spec.track ?? 2) * 0.6 + 0.6 + (carts ? D.bladeExtra : 0)
+    const x = car.x + f.x * reach, z = car.z + f.z * reach
+    const { carted } = this.physics.shove(x, car.y + 0.4, z, r, Math.sign(v) * f.x, Math.sign(v) * f.z, push, carts ? r : 0)
+    if (carted) this.effects.dust(x, car.y + 0.4, z, 1 + carted * 0.25)
+  }
+
   collide(car, dt, input) {
     this.plough(car, dt, input)
+    this.sweep(car, dt)
     const spec = car.spec, f = car.forward(), rx = -f.z, rz = f.x
     const hl = spec.length / 2, ht = spec.track / 2, v = car.speed
     const probes = [[-1, hl], [1, hl], [0, hl], [-1, -hl], [1, -hl], [0, -hl], [-1, hl * 0.5], [-1, 0], [-1, -hl * 0.5], [1, hl * 0.5], [1, 0], [1, -hl * 0.5]]
@@ -333,6 +357,8 @@ export class Combat {
     // more than being strict about whose damage it was.
     if (this.physics?.world) {
       const blast = T.physics.blast
+      // whatever is already lying there gets broken up rather than merely shoved again
+      this.structures?.shatter(x, y, z, r * blast.reach)
       for (const { entry, piece } of this.physics.near(x, y, z, r * blast.reach)) {
         const c = piece.world
         const dx = c.cx - x, dy = c.cy - y, dz = c.cz - z, d = Math.hypot(dx, dy, dz) || 1

@@ -414,6 +414,12 @@ night. It costs one uniform and no CPU at all. The glass in front of it had to b
 to be visible — an opaque pane hides the room completely, which is how a headlight appeared to switch a house's
 lights off: the pane it was lighting went blue-grey and the lit room behind it was never drawn at all.
 
+**Clearing it.** What the front of a vehicle does to loose rubbish is a different job from what it does to walls,
+and it runs on `spec.clear`, the same coefficient the rubble heaps use — which spans 0.4 to 50, so a trike nudges a
+brick and a bulldozer clears the street. The dozer alone *carts off* what goes under its blade rather than pushing
+an ever-growing pile in front of it, and only with the blade down. Measured on a settled pile of 22 bricks, one
+straight pass: trike 0, monster truck 0, bulldozer with the blade up 0, bulldozer with it down 10.
+
 **Rubbish in the road.** Debris that comes to rest on the parade route is something the float has to get past.
 Each client reports where its own pieces settled — only ahead of the float, only inside the corridor it needs, and
 only far enough ahead that there is time to clear it — and the server buckets those onto `Round::DEBRIS_SLOT` of

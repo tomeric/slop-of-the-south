@@ -121,11 +121,13 @@ export const TUNING = {
     on: true, step: 1 / 60, maxSteps: 3, gravity: -16, interpolate: true,
     floorDrop: 4,                             // this far under the ground = the tile went out from under it; recycle
     warpJump: 12,                             // the car moving further than this in one frame is a teleport, not driving
-    debris: { density: 900, friction: 0.9, bounce: 0.05, linear: 0.05, angular: 0.4, maxFall: 11 },   // maxFall x step must stay well under the smallest chip
+    debris: { density: 900, friction: 0.9, bounce: 0.05, linear: 0.05, angular: 0.4, maxFall: 11,
+              sweepAhead: 1.4, sweepPush: 12, sweepHigh: 2.5, bladeExtra: 0.9 },   // what the front of a vehicle does
+              // to loose rubbish, and how much of the blade's swath a bulldozer carts away rather than shoves   // maxFall x step must stay well under the smallest chip
     // The second tier of solid: a shell of slabs, one per footprint edge, on every intact building inside `radius`
     // that is not built out of pieces — the overflow past `maxBuildings`, whatever is still queued, and the OSM
     // boxes that have no faces to build from. Without it a car drives straight through them.
-    solid: { radius: 60, keep: 1.25, perFrame: 24, thick: 0.3, jog: 0.15 },   // jog: surveyed wiggles smaller than this are not worth a collider
+    solid: { radius: 60, keep: 1.25, perFrame: 24, thick: 0.3, jog: 0.15, trunk: 0.28, trunkOf: 0.45 },   // jog: surveyed wiggles smaller than this are not worth a collider
     // The chassis and its wheels (Rapier's raycast vehicle controller). Stiffness, compression and relaxation are
     // Bullet's own units, which scale with the weight the solver puts on each wheel, so they are given straight
     // rather than derived from `susp`. maxFall is the car's terminal velocity for the same reason the debris has
@@ -144,7 +146,7 @@ export const TUNING = {
     // The debris pool, split between the materials the world is made of (game/Physics.js DEBRIS). `minChip` is
     // the floor on a collider's smallest dimension: under `maxFall x step` it goes through the ground.
     chips: { pool: 260, size: 0.5, speed: 7, life: 30, minChip: 0.22 },   // pool: reload (the bodies are made once)
-    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5, chips: 4, shards: 7 },   // chips off a broken
+    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5, chips: 4, shards: 7, shatter: 9 },   // chips off a broken
                                               // panel, and the shards a pane goes into instead of toppling   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points
     // what holds what up (game/Support.js): weld is how far apart two pieces may be and still touch, slack how far

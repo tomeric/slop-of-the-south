@@ -40,8 +40,9 @@ const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 // drawn piece sits proud of the ground.
 const DEBRIS = {
   steen: { box: [1, 0.6, 0.55], size: 1.0, share: 0.4, colours: [0x9a5f4a, 0xa8705a, 0x8d5442, 0xb08a72, 0x7d6b5e] },
-  glas:  { box: [1, 0.45, 0.8], size: 0.95, share: 0.2, colours: [0xa8c4d4, 0x9bb8c8, 0xc2d8e4], rough: 0.12,
-           density: 700, bounce: 0.2, mat: { transparent: true, opacity: 0.62, metalness: 0.2 } },
+  glas:  { box: [1, 0.42, 0.85], size: 1.15, share: 0.2, colours: [0xcfe6f2, 0xbcd8e8, 0xe2f1f8], rough: 0.06,
+           density: 700, bounce: 0.25, mat: { transparent: true, opacity: 0.82, metalness: 0.35,
+           emissive: 0x6d8fa3, emissiveIntensity: 0.35 } },   // it has to read against a grey road, so it is bright
   hout:  { box: [1, 0.45, 0.45], size: 1.25, share: 0.2, log: true, colours: [0x6b4b2e, 0x7d5a38, 0x5a3f27, 0x8a6b45] },
   beton: { box: [1, 0.4, 0.85], size: 1.1, share: 0.2, colours: [0x8d8a84, 0x7a7670, 0x9c988f, 0x6e5a52, 0x8a4f3c] },
 }
@@ -141,10 +142,22 @@ export class Physics {
   // L-shaped block's courtyard and a terrace's alley and you would drive into thin air. Rings arrive open, so the
   // last edge wraps back to the first point.
   solid(obj) {
-    if (!this.world || this.solids.has(obj.key) || !obj.rings) return 0
+    if (!this.world || this.solids.has(obj.key)) return 0
     const S = T.physics.solid
     const base = obj.y ?? (this.chunks ? this.chunks.heightAt(obj.x, obj.z) : 0)
     const h = Math.max(2, obj.h ?? 6)
+    // A trunk. Trees are point objects with no footprint to wrap, and without this a car simply drove through them
+    // — which was fine when `hitPoint` was the only thing stopping anybody and is not now.
+    if (!obj.rings) {
+      if (obj.kind !== "t") return 0                             // lamps and signs are flattened, not driven round
+      const r = Math.max(S.trunk, (obj.r ?? 0.5) * S.trunkOf)
+      const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed())
+      this.world.createCollider(this.R.ColliderDesc.cylinder(h * 0.45, r)
+        .setTranslation(obj.x, base + h * 0.45, obj.z)
+        .setCollisionGroups(GROUP.solid), body)
+      this.solids.set(obj.key, body)
+      return 1
+    }
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed())
     let n = 0
     for (const raw of obj.rings) {
@@ -297,6 +310,24 @@ export class Physics {
     if (p.y > ground + 0.2) chip.body.setTranslation({ x: p.x, y: ground + chip.size / 2, z: p.z }, false)
   }
 
+  // Something is shoving what is lying in the road. Everything inside r gets pushed the way the blade is going, and
+  // a vehicle that actually clears — the bulldozer — carts off what ends up under the blade rather than merely
+  // pushing it along in front for ever, which is what a bulldozer is for.
+  shove(x, y, z, r, dx, dz, push, cartWithin = 0) {
+    let moved = 0, carted = 0
+    for (const chip of this.chips) {
+      if (!chip.live) continue
+      const p = chip.body.translation()
+      const d = Math.hypot(p.x - x, p.z - z)
+      if (d > r || Math.abs(p.y - y) > T.physics.debris.sweepHigh) continue
+      // carting comes first: shove hard enough and nothing ever reaches the blade to be cleared
+      if (d < cartWithin) { this.free(chip); carted++; continue }
+      chip.body.applyImpulse({ x: dx * push, y: push * 0.3, z: dz * push }, true)
+      moved++
+    }
+    return { moved, carted }
+  }
+
   // everything lying within r of (x, z) is carted away
   sweep(x, z, r) {
     let n = 0
@@ -371,6 +402,15 @@ export class Physics {
     entry.live.set(piece, slot)
     this.moving.add(slot)
     return slot
+  }
+
+  // A piece that has already fallen gives up its body: the geometry stays where the caller puts it and the slot is
+  // forgotten, so whatever replaces it (chips, usually) is the only thing left moving.
+  dropPiece(entry, piece, slot) {
+    if (!slot) return
+    this.world.removeRigidBody(slot.body)
+    this.moving.delete(slot)
+    entry.live?.delete(piece)
   }
 
   // Which standing pieces are within r of a point. One broad-phase query rather than a walk over every piece of

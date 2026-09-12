@@ -146,20 +146,23 @@ export class Destructibles {
 
   transition(obj, hp, max, s, silent) {
     if (s > obj.state) {
-      if (obj.state === 0) {
+      const wasStanding = obj.state === 0
+      if (wasStanding) {
         obj.remove()
         obj.detail?.remove()                             // the plinth, sills and door game/Facades.js hung on it
         this.onDown?.(obj)                               // …and the pieces game/Structures.js built out of it
         if (s === 1) {
           obj.rubble = makeRubble(obj, this.heightAt)
           obj.tile.group.add(obj.rubble)
-          if (!silent) this.effects?.collapse(obj, this.groundOf(obj))
         }
+        // Whatever it was, it comes down here. Only buildings get a rubble state — the server takes everything else
+        // straight to gone — so hanging this on `s === 1` meant a tree simply vanished instead of falling over.
+        if (!silent) this.effects?.collapse(obj, this.groundOf(obj))
       }
       if (s === 2) {
         if (obj.kind === "d") this.onSwept?.(obj)         // the pieces lying there go with it
         if (obj.rubble) { obj.tile.group.remove(obj.rubble); obj.rubble.geometry.dispose(); obj.rubble = null }
-        if (!silent) this.effects?.dust(obj.x, this.groundOf(obj) + 1, obj.z, obj.rings ? Math.max(obj.maxX - obj.minX, obj.maxZ - obj.minZ) / 2 : 2)
+        if (!silent && !wasStanding) this.effects?.dust(obj.x, this.groundOf(obj) + 1, obj.z, obj.rings ? Math.max(obj.maxX - obj.minX, obj.maxZ - obj.minZ) / 2 : 2)
       }
       obj.state = s
     } else if (s === obj.state && s === 0 && hp < obj.hp && obj.tint) {

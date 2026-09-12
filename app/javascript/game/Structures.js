@@ -90,7 +90,8 @@ export class Structures {
     if (!phys?.world) return
     const want = new Set(), fresh = []
     this.index.near(car.x, car.z, S.radius, (obj) => {
-      if (obj.state !== 0 || !obj.rings || this.built.has(obj.key)) return
+      if (obj.state !== 0 || this.built.has(obj.key)) return
+      if (!obj.rings && obj.kind !== "t") return                 // buildings, and the trunks of standing trees
       want.add(obj.key)
       if (!this.slabbed.has(obj.key)) fresh.push(obj)
     })
@@ -167,7 +168,13 @@ export class Structures {
     const glass = (piece.ranges ?? []).find((r) => r.name === "glas" && r.count)
     if (glass) {
       this.hideRange(entry, glass)
-      this.physics?.burst(cx, cy, cz, size * 0.3, T.physics.pieces.shards, "glas")
+      // Out into the street, not into the front room. The pane sits inside the wall, so a burst at the piece's own
+      // centre put every shard behind the brick where nobody could see it — which is why the glass looked like it
+      // was not breaking at all. The face normal is the way out.
+      const n = piece.obb?.basis?.n
+      const k = T.buildings.structure.thick + 0.35
+      this.physics?.burst(cx + (n?.x ?? 0) * k, cy + (n?.y ?? 0) * k, cz + (n?.z ?? 0) * k,
+                          size * 0.3, T.physics.pieces.shards, "glas")
     }
     if (mat === "glas") {
       this.hide(entry, piece)                                   // nothing left worth toppling
@@ -179,6 +186,31 @@ export class Structures {
     this.falling.add(entry)
     this.onDamage?.(entry.obj, T.physics.pieces.damage * (entry.obj.max / Math.max(1, entry.pieces.length)))
     return 1
+  }
+
+  // A second rocket into the same hole. Panels that have already come down are lying there as whole panels, so a
+  // blast that only breaks what is still standing does nothing to them. This turns the fallen ones within reach
+  // into the material they are made of: the body goes, the panel goes out of the drawn geometry, and what is left
+  // is a heap of brick. Fire enough and a wall ends up as rubble rather than as a stack of slabs.
+  shatter(x, y, z, r) {
+    let n = 0
+    for (const entry of this.built.values()) {
+      if (!entry.live?.size) continue
+      if (Math.hypot(entry.obj.x - x, entry.obj.z - z) > r + T.buildings.structure.radius) continue
+      for (const [piece, slot] of [...entry.live]) {
+        const p = slot.body.translation()
+        if (Math.hypot(p.x - x, p.y - y, p.z - z) > r) continue
+        const mat = materialOf(piece)
+        const b = piece.box
+        const size = b ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) : 1
+        this.physics?.dropPiece(entry, piece, slot)
+        this.hide(entry, piece)
+        this.physics?.burst(p.x, p.y, p.z, size * 0.3, Math.min(T.physics.pieces.shatter, Math.max(2, Math.round(size * 1.6))), mat)
+        n++
+      }
+    }
+    if (n) this.stats.pieces = Math.max(0, this.stats.pieces - n)
+    return n
   }
 
   // take a piece out of the standing geometry without giving it a body of its own
