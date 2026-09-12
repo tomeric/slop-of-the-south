@@ -250,7 +250,7 @@ async function main() {
       physics.update(dt)
       car.sync(dt, heightAt)
       combat.enabled = vrij || round.running
-      combat.collide(car, dt)
+      combat.collide(car, dt, input)
       combat.abilities(car, input, dt)
       carFx.update(car, dt)
       pickups.collect(car, tileIndex, onPickup)

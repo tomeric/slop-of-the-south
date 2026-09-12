@@ -137,9 +137,12 @@ export const TUNING = {
     // a supporter's top may overshoot, overhang how far a floor may hang past whatever is left under it
     support: { weld: 0.15, slack: 0.4, groundBite: 0.4, overhang: 2.5 },
     // driving through a wall rather than off it: how fast you have to be, what each panel costs you, and the floor
-    smash: { speed: 9, exit: 4, loss: 0.7, reach: 1.0, maxPanels: 3, shove: 0.35, damage: 4, grind: 2.5 },
+    smash: { speed: 9, exit: 4, loss: 0.7, reach: 1.0, maxPanels: 3, shove: 0.35, damage: 4, grind: 2.5,
+             ahead: 1.2, perFrame: 14, perNewton: 30000 },   // how far in front of the bumper the path is cleared, how
+             // much of it a frame, and how many newtons of traction it takes to grind one panel off per second
     blast: { reach: 0.8, push: 7 },           // a rocket takes the pieces within this much of its radius with it
   },
+  damage: { grind: 2e-4 },                  // hit points per newton of traction per second, leaning on a wall
   money: { label: 40000 },                  // € off one building before a bang goes up over it: ~7 to flatten a house (live)
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)

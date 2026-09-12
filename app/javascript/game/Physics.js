@@ -416,11 +416,17 @@ export class Physics {
     if (!ctrl) return
     const wheels = this.wheels
     const driven = wheels.filter((w) => !w.front).length || wheels.length
+    // Bullet's two pedals are not in the same units, which is a trap: the engine is a force (it multiplies by the
+    // timestep itself) but the brake is the maximum *impulse* the tyre may take off the wheel this step. Hand it a
+    // force and it arrives twenty times too hard, all of it at the contact patch, and the car pitches over its own
+    // nose — which is exactly what the first version of this did. So the brake is converted here and every caller
+    // gets to think in newtons.
+    const h = this.world.timestep
     for (let i = 0; i < wheels.length; i++) {
       const w = wheels[i]
       const drives = wheels.length === driven || !w.front
       ctrl.setWheelEngineForce(i, drives ? engine / driven : 0)
-      ctrl.setWheelBrake(i, brake / wheels.length)
+      ctrl.setWheelBrake(i, (brake * h) / wheels.length)
       ctrl.setWheelSteering(i, w.front ? steer : 0)
       const g = (w.front ? slip : rearSlip ?? slip)
       if (g !== null) ctrl.setWheelFrictionSlip(i, g)

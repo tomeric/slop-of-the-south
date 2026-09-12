@@ -45,7 +45,54 @@ export class Combat {
   // pushed out along the contact normal and loses the speed it had into the wall, keeping most of the rest.
   // Pushing vehicles grind through what is in front of them; rubble only slows and takes chipping; an airborne car
   // clears posts and trees but not houses. One contact resolves per frame.
-  collide(car, dt) {
+  // Clear a path. The chassis is a real body now, so a wall stops it the moment it touches one — and a wall is many
+  // panels thick, so breaking a few at a probe point leaves the car stalled against the rest of the house. Above the
+  // vehicle's smash speed it instead sweeps everything out of a ball just ahead of the bumper, sized by the vehicle
+  // and by how fast it is going, and drives on through what is now loose rubble. The speed it loses is the energy
+  // the solver takes off it shoving that rubble aside, which is a better answer than the per-panel tax used to be.
+  plough(car, dt, input) {
+    const spec = car.spec, v = car.speed
+    if (!this.physics?.world) return 0
+    const fast = v >= (spec.smashMin ?? T.physics.smash.speed)
+    // Stopped against a wall with the throttle down, what gets through is not speed but traction — the force the
+    // vehicle can actually put on the ground, which is its mass times its acceleration. That is 60 kN for the
+    // bulldozer, 36 for the monster truck and 3.9 for the trike: high, middling and very nearly hopeless, without a
+    // table anywhere saying so. So leaning on a house works, and how well depends on what you are leaning with.
+    const press = !fast && input?.throttle > 0 && v > -0.5 ? car.mass * car.accel : 0
+    if (!fast && !press) { this.grindT = 0; return 0 }
+    const f = car.forward()
+    const reach = spec.length / 2 + T.physics.smash.ahead + Math.abs(v) * dt
+    const px = car.x + f.x * reach, pz = car.z + f.z * reach
+    const r = Math.max(T.physics.smash.reach, (spec.track ?? 2) * 0.5 + T.physics.smash.reach)
+    const here = this.physics.near(px, car.y + (spec.body?.y ?? 1), pz, r)
+    if (!here.length) { this.grindT = 0; return 0 }
+
+    // How many panels may go this frame: everything in the way when you arrive at speed, or what your traction
+    // grinds off while you lean. The fractional part carries over, or a trike would never break anything at all.
+    let budget = T.physics.smash.perFrame
+    if (!fast) {
+      this.grindT = (this.grindT ?? 0) + (press / T.physics.smash.perNewton) * dt
+      budget = Math.floor(this.grindT)
+      if (budget > 0) this.grindT -= budget
+      this.queue(here[0].entry.obj, press * T.damage.grind * dt)
+    }
+    let n = 0
+    for (const h of here) {
+      if (n >= budget) break
+      const shove = fast ? T.physics.smash.shove : T.physics.smash.shove * 0.3
+      const broke = this.structures.break(h.entry, h.piece, car.vx * shove, 1.5, car.vz * shove)
+      if (broke) this.queue(h.entry.obj, T.physics.smash.damage)
+      n += broke
+    }
+    if (n) {
+      this.effects.dust(px, car.y + 0.8, pz, 1.2 + n * 0.3)
+      this.effects.shake(Math.min(0.5, Math.abs(v) / 40))
+    }
+    return n
+  }
+
+  collide(car, dt, input) {
+    this.plough(car, dt, input)
     const spec = car.spec, f = car.forward(), rx = -f.z, rz = f.x
     const hl = spec.length / 2, ht = spec.track / 2, v = car.speed
     const probes = [[-1, hl], [1, hl], [0, hl], [-1, -hl], [1, -hl], [0, -hl], [-1, hl * 0.5], [-1, 0], [-1, -hl * 0.5], [1, hl * 0.5], [1, 0], [1, -hl * 0.5]]
@@ -71,26 +118,10 @@ export class Combat {
         // What it takes to go through one is the vehicle's business, not the world's: a bulldozer leans on it at
         // walking pace, a monster truck needs a run-up, a trike needs to be reckless.
         if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
-          let n = 0
-          for (const h of here) {
-            if (n >= (spec.smashPanels ?? T.physics.smash.maxPanels)) break
-            const broke = this.structures.break(h.entry, h.piece, car.vx * T.physics.smash.shove, 1.5, car.vz * T.physics.smash.shove)
-            if (broke) this.queue(h.entry.obj, T.physics.smash.damage)
-            n += broke
-          }
-          if (n) {
-            const loss = n * T.physics.smash.loss * (spec.smashLoss ?? 1)
-            car.speed = Math.sign(car.speed || 1) * Math.max(T.physics.smash.exit, Math.abs(car.speed) - loss)
-            car._speedOut = car.speed                                  // or Vehicle.integrate kills the drift next frame
-            this.queue(obj, spec.ram * 0.25 * into0 * into0)
-            this.effects.dust(px, car.y + 0.8, pz, 1.2 + n * 0.3)
-            this.effects.shake(Math.min(0.5, into0 / 40))
-            break
-          }
+          this.queue(obj, spec.ram * 0.25 * into0 * into0)              // the panels themselves are plough()'s business
+          break
         }
-        car.speed *= 1 - (spec.push ? 1.5 : T.physics.smash.grind) * dt   // too slow to break it: grind against it
-        this.queue(obj, spec.ram * Math.abs(car.speed) * 2 * dt)
-        break
+        break                                                           // too slow to break it: plough() bills the lean
       }
       if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { car.speed *= 1 - 1.5 * dt; this.queue(obj, spec.ram * v * 10 * dt); this.effects.shake(0.05); break }
       car.x += nx * depth; car.z += nz * depth

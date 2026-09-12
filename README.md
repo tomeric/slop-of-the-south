@@ -392,6 +392,16 @@ free. The room's running total rides out with the verdicts at 4 Hz and sits in t
 Free roam keeps its own total the same way. Every `T.money.label` euros taken off one building, a comic starburst
 goes up over it with the amount in it — and over €200k it says something.
 
+**Driving through one.** A chassis that is really there is stopped by a wall the moment it touches one, and a wall
+is several panels thick — so breaking a few at a probe point leaves you stalled against the rest of the house.
+Above the vehicle's smash speed it sweeps everything out of a ball just in front of the bumper instead, sized by
+the vehicle and by how fast it is going, and drives on through what is now loose rubble; the speed it loses is the
+energy the solver takes off it shoving that rubble aside, rather than a per-panel tax. Below that speed, leaning on
+the wall with the throttle down still works, and what gets through is traction — the force the vehicle can put on
+the ground, `mass × accel`. That is 60 kN for the bulldozer, 36 for the monster truck and 3.9 for the trike, so the
+dozer grinds two panels a second and flattens a house in fifteen, the truck manages one, and the trike measurably
+cannot do it at all. No table says so anywhere; it falls out of the masses.
+
 **Taking a house apart.** Every standing piece is a static box in the physics world, on one fixed body per building,
 so the car and the rocket have something to find. Break one — drive through it above `T.physics.smash.speed`, or put
 a rocket in it — and its box is swapped for a dynamic one at the same spot, while its triangles stay exactly where
