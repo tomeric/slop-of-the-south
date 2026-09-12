@@ -45,6 +45,25 @@ export class Combat {
   // pushed out along the contact normal and loses the speed it had into the wall, keeping most of the rest.
   // Pushing vehicles grind through what is in front of them; rubble only slows and takes chipping; an airborne car
   // clears posts and trees but not houses. One contact resolves per frame.
+  // What a hit costs, in hit points. It is the kinetic energy the vehicle actually delivers into the thing it hit:
+  // half its mass times the closing speed along the contact normal, squared. So doubling your speed does four times
+  // the damage, and a bulldozer that has been slowed to walking pace stops being a wrecking ball.
+  //
+  // Two coefficients sit on top. `bite` is how well the thing is shaped for demolition — a blade concentrates its
+  // energy into a wall, a trike's nose splatters — and it is what keeps the three vehicles distinct now that mass
+  // does the rest. The direction multiplier is which part of you made contact: the monster truck hits twice as hard
+  // with a flank and four times as hard with its underside, and a bulldozer with its blade in motion lands half as
+  // hard again.
+  energy(car, closing, mult = 1) {
+    return T.damage.k * 0.5 * car.mass * closing * closing * (car.spec.bite ?? 0.3) * mult
+  }
+
+  // the blade counts only while it is actually swinging, which is the 0.4 s between a press and the arms arriving
+  bladeMoving(mesh) {
+    const b = this.blades.get(mesh)
+    return !!b && b.t !== b.target
+  }
+
   // Clear a path. The chassis is a real body now, so a wall stops it the moment it touches one — and a wall is many
   // panels thick, so breaking a few at a probe point leaves the car stalled against the rest of the house. Above the
   // vehicle's smash speed it instead sweeps everything out of a ball just ahead of the bumper, sized by the vehicle
@@ -118,19 +137,20 @@ export class Combat {
         // What it takes to go through one is the vehicle's business, not the world's: a bulldozer leans on it at
         // walking pace, a monster truck needs a run-up, a trike needs to be reckless.
         if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
-          this.queue(obj, spec.ram * 0.25 * into0 * into0)              // the panels themselves are plough()'s business
+          this.queue(obj, this.energy(car, into0, T.damage.through))    // the panels themselves are plough()'s business
           break
         }
         break                                                           // too slow to break it: plough() bills the lean
       }
-      if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { car.speed *= 1 - 1.5 * dt; this.queue(obj, spec.ram * v * 10 * dt); this.effects.shake(0.05); break }
+      if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { this.queue(obj, this.energy(car, v, T.damage.through) * dt * 4); this.effects.shake(0.05); break }
       car.x += nx * depth; car.z += nz * depth
       const into = -(car.vx * nx + car.vz * nz)                                              // speed into the wall
       if (into <= 0) continue
       const wx = car.vx + nx * into * 1.2, wz = car.vz + nz * into * 1.2                    // that part reverses to a fifth
       car.speed = wx * f.x + wz * f.z; car.lateral = wx * rx + wz * rz; car.vx = wx; car.vz = wz
       if (into > 2 && this.rammed(obj)) {
-        this.queue(obj, spec.ram * (flank ? spec.side ?? 1 : 1) * into * into)
+        const mult = (flank ? spec.side ?? 1 : 1) * (this.bladeMoving(car.mesh) ? spec.blade ?? 1 : 1)
+        this.queue(obj, this.energy(car, into, mult))
         this.effects.dust(px, car.y + 0.6, pz, 1.5)
         this.effects.shake(Math.min(0.6, into / 30))
       }
@@ -174,7 +194,12 @@ export class Combat {
     this.cd = Math.max(0, this.cd - dt)
     if (car.landed) {                                                                       // a hop off a hill puffs dust; the monster truck's hard landings crush
       car.landed = false
-      if (car.spec.ability.kind === "thrust" && car.landImpact > 4) this.explode(car.x, car.y + 0.5, car.z, JUMP.r, JUMP.dmg, true, false)
+      // landing on a house is a hit with your underside, at the speed you landed with — which is where the monster
+      // truck's bottom multiplier earns its keep
+      if (car.landImpact > T.damage.landMin) {
+        const dmg = this.energy(car, car.landImpact, car.spec.bottom ?? 1)
+        if (dmg > 1) this.explode(car.x, car.y + 0.5, car.z, JUMP.r, dmg, true, false)
+      }
       else if (car.landImpact > 2) this.effects.dust(car.x, car.y + 0.4, car.z, 1 + car.landImpact * 0.3)
       this.effects.shake(Math.min(0.6, car.landImpact / 12))
     }

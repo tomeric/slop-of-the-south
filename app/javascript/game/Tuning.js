@@ -147,7 +147,15 @@ export const TUNING = {
              // much of it a frame, and how many newtons of traction it takes to grind one panel off per second
     blast: { reach: 0.8, push: 7 },           // a rocket takes the pieces within this much of its radius with it
   },
-  damage: { grind: 2e-4 },                  // hit points per newton of traction per second, leaning on a wall
+  // What a hit costs: k x 1/2 m v^2 x the vehicle's `bite` x which part of it made contact. Calibrated so each
+  // vehicle lands on what its old hand-picked `ram` coefficient gave at its own ramming speed, but moving with
+  // mass and speed from here on instead of sitting in a table.
+  damage: {
+    k: 5e-4,                                // hit points per joule delivered
+    through: 0.25,                          // a wall you go through takes a quarter: the panels bill the rest
+    grind: 2e-4,                            // hit points per newton of traction per second, leaning on a wall
+    landMin: 4,                             // m/s of landing before the underside counts as a hit
+  },
   money: { label: 40000 },                  // € off one building before a bang goes up over it: ~7 to flatten a house (live)
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)

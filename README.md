@@ -392,6 +392,15 @@ free. The room's running total rides out with the verdicts at 4 Hz and sits in t
 Free roam keeps its own total the same way. Every `T.money.label` euros taken off one building, a comic starburst
 goes up over it with the amount in it — and over €200k it says something.
 
+**What a hit costs.** Damage is the kinetic energy the vehicle actually delivers: `k × ½ m v²` along the contact
+normal, so doubling your speed does four times the damage and a bulldozer slowed to walking pace stops being a
+wrecking ball. Two coefficients sit on top — `bite`, how well the thing is shaped for demolition (a blade
+concentrates its energy, a trike's nose splatters), and which part of you made contact. The monster truck hits
+twice as hard with a flank and **four times** as hard with its underside, so landing flat on a roof is a way to
+play it; the bulldozer hits half as hard again while its blade is actually swinging. Calibrated so each vehicle
+lands on what its old hand-picked coefficient gave at its own ramming speed — trike 20 at 30 m/s, truck 160 nose
+and 320 flank at 20, dozer 300 at 10 — but moving with mass and speed from here on rather than sitting in a table.
+
 **Driving through one.** A chassis that is really there is stopped by a wall the moment it touches one, and a wall
 is several panels thick — so breaking a few at a probe point leaves you stalled against the rest of the house.
 Above the vehicle's smash speed it sweeps everything out of a ball just in front of the bumper instead, sized by
