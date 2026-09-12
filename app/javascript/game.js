@@ -103,6 +103,7 @@ async function main() {
   // a panel broken off a house counts against the same hit points ramming it would, so demolishing it by hand and
   // driving into it end in the same place as far as the server is concerned
   structures.onDamage = (obj, dmg) => combat.queue(obj, dmg)
+  index.onDown = (obj) => structures.demolish(obj)          // the server says it is rubble: everything still up lets go
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
   const music   = new Music(el("muziek"))

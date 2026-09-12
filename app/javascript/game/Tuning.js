@@ -110,7 +110,7 @@ export const TUNING = {
     warpJump: 12,                             // the car moving further than this in one frame is a teleport, not driving
     debris: { density: 900, friction: 0.9, bounce: 0.05, linear: 0.05, angular: 0.4, maxFall: 11 },   // maxFall x step must stay well under the smallest chip
     chips: { pool: 220, size: 0.5, speed: 7, life: 30 },   // pool: reload (the bodies are made once)
-    pieces: { max: 160, perFrame: 24, damage: 1.4 },   // in the air at once, how many may let go per frame, and
+    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5 },   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points
     // what holds what up (game/Support.js): weld is how far apart two pieces may be and still touch, slack how far
     // a supporter's top may overshoot, overhang how far a floor may hang past whatever is left under it

@@ -108,6 +108,7 @@ export class Destructibles {
       if (obj.state === 0) {
         obj.remove()
         obj.detail?.remove()                             // the plinth, sills and door game/Facades.js hung on it
+        this.onDown?.(obj)                               // …and the pieces game/Structures.js built out of it
         if (s === 1) {
           obj.rubble = makeRubble(obj, this.heightAt)
           obj.tile.group.add(obj.rubble)

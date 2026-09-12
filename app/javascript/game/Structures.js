@@ -4,6 +4,7 @@ import { buildStructure, collector } from "game/Structure"
 import { buildingMaterial } from "game/BuildingTextures"
 import { buildingPalette as palette } from "game/BuildingMeshes"
 import { graphOf, unsupported } from "game/Support"
+import { collapseRange } from "game/Destructibles"
 
 // Which houses are built rather than painted, and when they change over.
 //
@@ -52,6 +53,8 @@ export class Structures {
     this.stats.buildMs = performance.now() - t0
     this.stats.queued = this.queue.length
     this.settle()
+    const now = performance.now()
+    for (const [key, entry] of this.built) if (entry.dying && now - entry.dying > T.physics.pieces.settle * 1000) this.drop(key)
   }
 
   build(obj) {
@@ -114,6 +117,22 @@ export class Structures {
     }
   }
 
+  // The server has decided this house is rubble or gone while it was standing here as pieces. Its word is final,
+  // so everything still up lets go at once and the entry is dropped a couple of seconds later, by which time the
+  // heap `Destructibles` puts down has taken over.
+  demolish(obj) {
+    const entry = this.built.get(obj.key)
+    if (!entry || entry.dying) return
+    entry.dying = performance.now()
+    for (const piece of [...entry.standing]) {
+      entry.standing.delete(piece)
+      if (!this.physics?.breakPiece(entry, piece, (Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3)) {
+        for (const r of piece.ranges) { const geo = entry.geos?.get(r.name); if (geo) collapseRange(geo.attributes.position, r.start, r.count) }
+      }
+    }
+    this.falling.delete(entry)
+  }
+
   drop(key) {
     const entry = this.built.get(key)
     if (!entry) return
@@ -123,8 +142,7 @@ export class Structures {
       this.scene.remove(entry.group)
       for (const geo of entry.geos.values()) geo.dispose()
     }
-    entry.obj.show?.()
-    entry.obj.detail?.show?.()
+    if (entry.obj.state === 0) { entry.obj.show?.(); entry.obj.detail?.show?.() }   // a dead house does not come back
     this.stats.pieces -= entry.pieces.length
     this.built.delete(key)
     this.stats.built = this.built.size
