@@ -84,6 +84,16 @@ export const TUNING = {
     lit: 0.42,                                // how brightly the windows burn at night (live)
     detail: { on: true, cell: 125, radius: 1 },   // plinths, gutters, sills and doors, streamed 3x3 cells around the car
   },
+  // The rigid-body world (game/Physics.js). `on` is a boot setting — ?fysica=0 never even downloads the engine —
+  // and everything under it is live. Gravity is heavier than the real thing on purpose: debris that falls at 9.8
+  // reads as polystyrene at this scale.
+  physics: {
+    on: true, step: 1 / 60, maxSteps: 3, gravity: -16, interpolate: true,
+    floorDrop: 4,                             // this far under the ground = the tile went out from under it; recycle
+    warpJump: 12,                             // the car moving further than this in one frame is a teleport, not driving
+    debris: { density: 900, friction: 0.9, bounce: 0.05, linear: 0.05, angular: 0.4, maxFall: 11 },   // maxFall x step must stay well under the smallest chip
+    chips: { pool: 220, size: 0.5, speed: 7, life: 30 },   // pool: reload (the bodies are made once)
+  },
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)
   ground: {

@@ -154,6 +154,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Environment.js      the ambient light, PMREM-baked from the sky DayNight draws
     game/Outline.js          the cartoon outline pass, and who opts out of it
     game/Shadows.js          the sun's shadow box, hung on the camera and snapped to whole texels (?schaduw)
+    game/Physics.js          the rigid-body world: terrain colliders, the debris pool, the car as a kinematic box
     game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
     game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
     game/Bridges.js          decks with a fascia and a soffit, parapets, railings, abutments and piers
@@ -308,7 +309,7 @@ Open http://localhost:3000 in two browser windows and drive.
 Controls: W/↑ accelerate, S/↓ brake/reverse, A/D or ←/→ steer, Space handbrake, Shift boost, E trick, V vehicle
 picker (1–6 pick), N music, R reset to road, M expand the minimap (drag to pan, scroll to zoom, F fits the whole
 area, click to teleport, Esc closes). `?spawn=x,z,yaw` in the URL spawns at game coordinates, `?time=13` freezes
-the clock, `?schaduw` turns the sun's shadow on.
+the clock, `?schaduw` turns the sun's shadow on, `?fysica=0` turns the physics off.
 
 **Near the pavement** (`game/Facades.js`): the baked facade cannot do a sill (no shadow line) or a door (no depth),
 and neither is worth a triangle at two hundred metres, so both are streamed in 125 m cells around the car, three by
@@ -343,6 +344,22 @@ faces by hand where their material is made, and every instanced mesh (trees, gra
 built, because the addon offsets the hull with the model-view matrix alone and would place an instance's outline
 wrongly. In the densest village that costs +80 draw calls and +0.27 M triangles on 578 / 2.36 M. `slop.tuning.light.outline.on`
 turns it off live.
+
+**Physics** (`game/Physics.js`): a Rapier world — Rust compiled to WebAssembly, vendored as one file the way three
+is — carries everything that falls. Each tile hands it a 51 × 51 heightfield collider (transposed on the way in:
+Rapier stores the grid column-major with rows along z), the car enters as a kinematic box that shoves debris and
+cannot be shoved back, and the debris itself is a fixed pool of a few hundred bodies drawn as one instanced mesh, so
+the whole lot costs one draw call. `Effects.debris` now spawns those instead of integrating gravity by hand on boxes
+that faded out in mid-air.
+
+The clock is the fiddly part. The frame delta is whatever the browser gives (already clamped at 1/20 s) and a solver
+wants a fixed step, so time is accumulated and spent in whole steps of `T.physics.step`, at most `maxSteps` a frame,
+with the arrears dropped rather than paid; what is left over interpolates the drawn transform so a 144 Hz screen
+does not judder. Two numbers are a pair and have to stay that way: a body travels `maxFall × step` between contact
+checks and a heightfield triangle has no thickness, so the terminal velocity is held to about half the smallest
+chip — measured, dropping boxes 20 m onto a hillside, 0.30 m chips fell through at 15 m/s and 0.44 m ones did not.
+Anything that still gets away is caught by `floorDrop` and recycled. A 100-body scene steps in 0.15 ms.
+`?fysica=0` turns the whole thing off and, because the import is dynamic, does not even download the 2 MB.
 
 **Shadows** (`?schaduw`, `game/Shadows.js`) are off by default and cost nothing while they are. Turned on, the sun
 casts through one orthographic box of ±140 m at 2048² — a 14 cm texel — hung 45 % of its own width ahead of the

@@ -7,6 +7,7 @@ import { setBuildingsNight } from "game/BuildingTextures"
 import { DayNight } from "game/DayNight"
 import { Environment } from "game/Environment"
 import { Shadows } from "game/Shadows"
+import { Physics } from "game/Physics"
 import { Facades } from "game/Facades"
 import { updateWater, updateGround } from "game/Cover"
 import { Scatter } from "game/Scatter"
@@ -52,6 +53,10 @@ async function main() {
   // map size recompile every program in the scene, so this is read once, here (game/Shadows.js).
   const schaduw = new URLSearchParams(location.search).get("schaduw")
   if (schaduw !== null) TUNING.light.shadow.on = schaduw !== "0"
+  // ?fysica=0 leaves the rigid-body world out entirely — and, because game/Physics.js imports the engine
+  // dynamically, does not even download the 2 MB of WebAssembly.
+  const fysica = new URLSearchParams(location.search).get("fysica")
+  if (fysica !== null) TUNING.physics.on = fysica !== "0"
 
   const container = document.getElementById("game")
   const playerId = container.dataset.playerId
@@ -76,9 +81,14 @@ async function main() {
   }
   const pickups = new Pickups()                             // boost pads, placed per tile from its roads
   const scatter = new Scatter(world.scene, effects, { heightAt: (x, z) => chunks.heightAt(x, z), tileIndex: (x, z) => chunks.tileIndex(x, z) })   // grass, bushes and reeds
-  const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t) }, onDrop: (t) => { index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t) } })
+  const physics = new Physics(world.scene, null)            // the rigid-body world; `chunks` is set just below
+  const chunks  = new ChunkManager(world.scene, config, { onTile: (t) => { index.indexTile(t); pickups.addTile(t); scatter.addTile(t); physics.addTile(t) }, onDrop: (t) => { index.dropTile(t); pickups.dropTile(t); scatter.dropTile(t); physics.dropTile(t) } })
+  physics.chunks = chunks
+  effects.physics = physics
+  if (TUNING.physics.on) physics.boot().then(() => physics.setCar(car.mesh)).catch((e) => console.warn("fysica:", e))
   index.heightAt = (x, z) => chunks.heightAt(x, z)
   world.setHeightAt((x, z) => chunks.heightAt(x, z))
+  world.physics = physics                                     // so game/Bench.js can report the step cost beside the render
   const input   = new Input()
   const car     = new Vehicle(config.spawn, vehicleSpec(localStorage.getItem("voertuig") ?? "trike"))
   let carFx     = new VehicleFx(car.mesh, effects.smoke)
@@ -100,6 +110,7 @@ async function main() {
   const applySpec = (spec) => {
     world.scene.remove(car.setSpec(spec)); world.scene.add(car.mesh)
     carFx = new VehicleFx(car.mesh, effects.smoke)
+    physics.setCar(car.mesh)
     localStorage.setItem("voertuig", spec.id)
     voertuigEl.textContent = spec.naam; hintEl.textContent = spec.ability.hint
     placed = false
@@ -140,7 +151,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, shadows, facades, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, shadows, facades, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vrij, tuning: TUNING }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"
@@ -208,6 +219,7 @@ async function main() {
     }
     const digit = input.digit
     if (digit) picker.digit(digit)
+    const upd0 = performance.now()
     if (chunks.ready(car.x, car.z)) {
       if (input.reset) { car.reset(config.spawn); placed = false }
       if (!placed) {
@@ -225,6 +237,7 @@ async function main() {
       combat.enabled = vrij || round.running
       combat.collide(car, dt)
       car.settle(heightAt)
+      physics.update(dt, car)
       combat.abilities(car, input, dt)
       carFx.update(car, dt)
       pickups.collect(car, tileIndex, onPickup)
@@ -232,6 +245,7 @@ async function main() {
     }
     pickups.update(dt)
     combat.projectiles(dt)
+    if (bench) bench.updateMs = performance.now() - upd0       // the CPU side of a frame, physics step included
     // the edge of the world: cross the province border and you burn back to where you were
     if (wall) {
       wall.update(timer.getElapsed())

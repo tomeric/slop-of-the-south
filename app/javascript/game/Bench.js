@@ -24,6 +24,7 @@ export class Bench {
     this.t = 0
     this.frames = []
     this.renders = []
+    this.updates = []                                                       // CPU per frame: the physics lives here
     this.result = null
     this.gl = world.renderer.getContext()
     this.pixel = new Uint8Array(4)
@@ -38,6 +39,7 @@ export class Bench {
       return
     }
     this.t += dt
+    if (this.updateMs) this.updates.push(this.updateMs)           // whatever game.js timed around its update block
     if (this.state === "kijk") {                                  // ordinary frames: is the refresh rate being held?
       this.frames.push(dt * 1000)
       if (this.t > WATCH) { this.state = "meet"; this.renders.length = 0 }
@@ -59,6 +61,8 @@ export class Bench {
       spot: this.spot.name,
       frameMs: percentiles(this.frames),                          // with one render a frame, so capped by vsync
       renderMs: percentiles(this.renders),                        // one render, unthrottled: the number to compare
+      updateMs: percentiles(this.updates),                        // the CPU side: car, collision, physics step
+      physics: this.world.physics?.stats && { ...this.world.physics.stats },
       calls: info.render.calls, triangles: info.render.triangles,
       programs: info.programs.length, textures: info.memory.textures, geometries: info.memory.geometries,
       pixelRatio: this.world.renderer.getPixelRatio(), gpuTimer: this.gpuTimer,

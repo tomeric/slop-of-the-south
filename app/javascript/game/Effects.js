@@ -14,6 +14,7 @@ let dustTex = null
 export class Effects {
   constructor(scene) {
     this.scene = scene
+    this.physics = null                     // set at boot: real bodies take over from the hand-thrown boxes below
     this.live = []
     this.shakeAmt = 0
     this.smoke = new SpritePool(scene, T.fx.smokePool, 0xd8d8d8)
@@ -42,7 +43,10 @@ export class Effects {
     this.add({ mesh, life: 0.35, t: 0, step: (e, k) => { e.mesh.scale.setScalar(r * (0.3 + 0.7 * k)); mat.opacity = 0.9 * (1 - k) } })
   }
 
+  // Real rigid bodies when the physics world is up, and the old hand-integrated boxes when it is not (?fysica=0, or
+  // the first second of the page while the engine is still compiling). The difference is that these land.
   debris(x, y, z, r, n) {
+    if (this.physics?.burst(x, y, z, r, n)) return
     for (let i = 0; i < n; i++) {
       const mesh = new THREE.Mesh(debrisGeo, debrisMat)
       mesh.castShadow = mesh.receiveShadow = true
