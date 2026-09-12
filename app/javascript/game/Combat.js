@@ -122,7 +122,10 @@ export class Combat {
       const { obj, nx, nz, depth } = hit
       if (car.airborne && !obj.rings) continue
       const flank = Math.abs(nx * rx + nz * rz) > Math.abs(nx * f.x + nz * f.z)               // the wall faces the side, not the nose
-      if (obj.state === 1) { car.speed *= 1 - 2.5 * dt; this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
+      // Rubble, either kind: what a building crumbled to, or a heap the server has put in the parade's way. You
+      // plough through it rather than off it — the pieces lying there are real bodies and slow the car themselves,
+      // so nothing here has to pretend to.
+      if (obj.state === 1 || obj.kind === "d") { this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
       const into0 = -(car.vx * nx + car.vz * nz)
       // A house built out of pieces is not a footprint any more. hitPoint still answers with the outline BAG
       // surveyed, but what is actually in the way is whatever panels are still standing there — so ask the physics

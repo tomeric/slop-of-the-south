@@ -186,6 +186,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Round.js            the round as the server tells it: town, route, obstacles, clock offset, action cooldown, HUD
     game/Parade.js           the praalwagen on its route (position from the shared clock), the red ribbon, the beacon
     game/Destructibles.js    every object a player can flatten: 25 m grid, hit tests, collapse/hide, rubble heaps
+                             by material, and the server's heaps of debris in the parade's way
     game/Combat.js           ramming, rubble, the six tricks, projectiles, explosions and knockback, `hit` batches
     game/Effects.js          flashes, debris, dust, confetti, camera shake, sprite pools
     game/Scatter.js          a carpet of grass tufts around the car plus bushes and reeds per tile; bushes squash under you
@@ -412,6 +413,15 @@ dark all night; the few sitting within `rooms.swing` of the line cross over as t
 night. It costs one uniform and no CPU at all. The glass in front of it had to become see-through for any of that
 to be visible — an opaque pane hides the room completely, which is how a headlight appeared to switch a house's
 lights off: the pane it was lighting went blue-grey and the lit room behind it was never drawn at all.
+
+**Rubbish in the road.** Debris that comes to rest on the parade route is something the float has to get past.
+Each client reports where its own pieces settled — only ahead of the float, only inside the corridor it needs, and
+only far enough ahead that there is time to clear it — and the server buckets those onto `Round::DEBRIS_SLOT` of
+route, so a house that sheds fifty pieces over eight metres becomes one heap to shift rather than fifty. A heap is
+an obstacle like any other: it sits in route order, the float loses to it, it wears its own icon on the tracker
+(🧱, which a flattened building gets too), and sweeping it aside carts off the pieces lying there, because the heap
+and the mess are the same thing. You plough through it rather than off it, at `spec.clear` — under a second in a
+trike, instantly in a bulldozer.
 
 **What a hit costs.** Damage is the kinetic energy the vehicle actually delivers: `k × ½ m v²` along the contact
 normal, so doubling your speed does four times the damage and a bulldozer slowed to walking pace stops being a

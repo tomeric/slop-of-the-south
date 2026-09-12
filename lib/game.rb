@@ -1,8 +1,8 @@
 # Co-op round mode ("Kernkop"): the round state machine, the arena queries and the channel protocol live under
 # this namespace. Server time is wall-clock milliseconds, the clock every client offsets itself against.
 module Game
-  # destruction keys the channel accepts: m:<bag id>, b:<building id>, t/l/g/s:<dm x>,<dm z>
-  KEY_RE = /\A[mbtlgs]:[\w,.-]{1,40}\z/
+  # destruction keys the channel accepts: m:<bag id>, b:<building id>, t/l/g/s:<dm x>,<dm z>, d:<route slot>
+  KEY_RE = /\A[mbtlgsd]:[\w,.-]{1,40}\z/
 
   def self.now_ms = (Time.now.to_f * 1000).to_i
 

@@ -297,8 +297,20 @@ export class Physics {
     if (p.y > ground + 0.2) chip.body.setTranslation({ x: p.x, y: ground + chip.size / 2, z: p.z }, false)
   }
 
+  // everything lying within r of (x, z) is carted away
+  sweep(x, z, r) {
+    let n = 0
+    for (const chip of this.chips) {
+      if (!chip.live) continue
+      const p = chip.body.translation()
+      if (Math.hypot(p.x - x, p.z - z) <= r) { this.free(chip); n++ }
+    }
+    return n
+  }
+
   free(chip) {
     chip.live = false
+    chip.settled = false
     chip.body.setEnabled(false)
     chip.body.setLinvel({ x: 0, y: 0, z: 0 }, false)
     chip.body.setAngvel({ x: 0, y: 0, z: 0 }, false)
@@ -607,8 +619,11 @@ export class Physics {
       const ground = this.chunks ? this.chunks.heightAt(p.x, p.z) : 0
       if (p.y < ground - T.physics.floorDrop || now - chip.born > life) { this.free(chip); continue }
       live++
-      if (chip.body.isSleeping()) highest = Math.max(highest, p.y - ground - chip.size / 2)
-      else awake++
+      if (chip.body.isSleeping()) {
+        // the frame it stops moving is the frame it becomes something lying in the road
+        if (!chip.settled) { chip.settled = true; this.onSettle?.(p.x, p.y, p.z) }
+        highest = Math.max(highest, p.y - ground - chip.size / 2)
+      } else { chip.settled = false; awake++ }
     }
     this.stats.awake = awake
     this.stats.live = live

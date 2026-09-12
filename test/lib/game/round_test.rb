@@ -58,6 +58,31 @@ module Game
       assert_equal 800_000 + Round::MAX_WOZ, r.to_h([])[:damage]
     end
 
+    test "debris in the road becomes something the parade has to get past" do
+      r = round
+      r.start!(START, [])
+      now = START + 10_000
+      travelled = r.travelled(now)
+      # behind the float, and too close in front of it, are both ignored: the parade is already past or has no chance
+      assert_nil r.debris(travelled - 5, now)
+      assert_nil r.debris(travelled + Round::DEBRIS_AHEAD - 1, now)
+      far = travelled + Round::DEBRIS_AHEAD + 50
+      heap = r.debris(far, now)
+      assert_equal [ "d", Round::DEBRIS_HP ], [ heap.kind, heap.hp ]
+      # a second load in the same stretch of road piles onto the same heap rather than making another
+      same = r.debris(far + Round::DEBRIS_SLOT / 4, now)
+      assert_equal heap.key, same.key
+      assert_equal Round::DEBRIS_HP * 2, same.hp
+      # it sits in route order, so the blocker walk finds it in the right place
+      assert_equal r.obstacles.map(&:at).sort, r.obstacles.map(&:at)
+      # and the float loses to it, until it is swept aside
+      at = START + (heap.at / r.speed * 1000).ceil + 10
+      assert_equal :lost, r.check(at)
+      r.hit(heap.key, 999, heap.max)
+      assert_equal :gone, r.objects[heap.key].state
+      assert_nil r.check(at)
+    end
+
     test "the shared action waits a minute and is free again when a round starts" do
       r = round
       p = Round::Player.new(id: "p", name: "Piet", joined_at: 0, tabs: 1)

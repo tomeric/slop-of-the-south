@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { TUNING as T } from "game/Tuning"
 
 // Every object a player can flatten, indexed for collisions and kept in step with the server. The tile builders
 // register a handle per object (BuildingMeshes, Buildings, Trees, Furniture, Signs): where it stands, how big it is,
@@ -27,7 +28,8 @@ export class Destructibles {
     this.heightAt = () => 0
     this.objects = new Map()      // key → object (every key of a sign pole points at the same object)
     this.cells = new Map()        // grid cell → [object]
-    this.state = new Map()        // key → { hp, max, state } as the server last said
+    this.state = new Map()
+    this.heaps = new Set()          // the server's rubble heaps, which outlive no round        // key → { hp, max, state } as the server last said
     this.frame = 0
   }
 
@@ -101,9 +103,41 @@ export class Destructibles {
     if (obj) this.transition(obj, hp, max, STATE[state], false)
   }
 
-  applyAll(list) { for (const o of list) if (o.hp !== null && o.hp !== undefined) this.apply(o.key, o.hp, o.max, o.state) }
+  applyAll(list) {
+    for (const o of list) {
+      if (o.hp === null || o.hp === undefined) continue
+      if (o.kind === "d") this.addHeap(o)                 // a heap of rubble the server put in the road
+      this.apply(o.key, o.hp, o.max, o.state)
+    }
+  }
 
-  resetRound() { this.state.clear() }
+  // A heap of rubble in the parade's way. It has no tile and no geometry of its own — the pieces lying there are
+  // each client's own debris — but it has to be something you can drive into and sweep, so it gets a handle in the
+  // same grid as everything else, as a point object with a radius.
+  addHeap(o) {
+    if (this.objects.has(o.key)) return
+    const r = T.parade.heap
+    const obj = { key: o.key, kind: "d", x: o.x, z: o.z, r, h: 1, max: o.max, hp: o.hp,
+                  state: 0, rubble: null, shade: 1, mark: 0, tile: null, remove: () => {},
+                  minX: o.x - r, maxX: o.x + r, minZ: o.z - r, maxZ: o.z + r }
+    this.objects.set(o.key, obj)
+    this.heaps.add(o.key)
+    this.eachCell(obj.minX, obj.maxX, obj.minZ, obj.maxZ, (c) => {
+      if (!this.cells.has(c)) this.cells.set(c, [])
+      this.cells.get(c).push(obj)
+    })
+  }
+
+  resetRound() {
+    this.state.clear()
+    for (const key of this.heaps) {
+      const obj = this.objects.get(key)
+      if (!obj) continue
+      this.objects.delete(key)
+      this.eachCell(obj.minX, obj.maxX, obj.minZ, obj.maxZ, (c) => { const list = this.cells.get(c); if (list) this.cells.set(c, list.filter((o) => o !== obj)) })
+    }
+    this.heaps.clear()
+  }
 
   // the round was lost here: everything within r goes, without a word to the server
   cosmeticWipe(x, z, r) {
@@ -123,6 +157,7 @@ export class Destructibles {
         }
       }
       if (s === 2) {
+        if (obj.kind === "d") this.onSwept?.(obj)         // the pieces lying there go with it
         if (obj.rubble) { obj.tile.group.remove(obj.rubble); obj.rubble.geometry.dispose(); obj.rubble = null }
         if (!silent) this.effects?.dust(obj.x, this.groundOf(obj) + 1, obj.z, obj.rings ? Math.max(obj.maxX - obj.minX, obj.maxZ - obj.minZ) / 2 : 2)
       }

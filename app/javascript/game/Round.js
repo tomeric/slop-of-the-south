@@ -7,7 +7,11 @@ import { euro } from "game/Tuning"
 // (verdicts on actions), end. Hooks: onRound(body, { fresh, started, live }), onEnd(msg), onAction(msg) for the
 // player's own accepted actions, onObjects(list) for the destructibles, onVote(vote or null).
 const SLOTS = 60                                                              // stretches of route on the bar
-const ICON = { m: "🏠", b: "🏠", t: "🌳", l: "💡", g: "🚦", s: "🪧" }
+const ICON = { m: "🏠", b: "🏠", t: "🌳", l: "💡", g: "🚦", s: "🪧", d: "🧱" }
+const RUBBLE_ICON = "🧱"                                                      // a flattened thing still in the way
+// the strip of road the float needs clear, and how far in front of it rubble is worth reporting at all. Both match
+// Game::Round::DEBRIS_AHEAD on the server, which is the side that decides.
+const PARADE = { corridor: 7, ahead: 45 }
 
 export class Round {
   constructor(playerId, els, hooks) {
@@ -105,6 +109,21 @@ export class Round {
 
   progress(now) { return this.round ? this.travelled(now) / this.round.path.length : 0 }
 
+  // How far along the parade route a point lies, or null if the float does not have to care about it: off to the
+  // side, behind it, or so close in front that nobody could clear it in time. The server applies the same rule, so
+  // this only saves the traffic.
+  onRoute(x, z) {
+    const r = this.round
+    if (!this.running || !r) return null
+    const p = r.path, dx = p.x1 - p.x0, dz = p.z1 - p.z0
+    const len2 = dx * dx + dz * dz || 1
+    const t = ((x - p.x0) * dx + (z - p.z0) * dz) / len2
+    const at = t * p.length
+    if (at <= this.travelled() + PARADE.ahead || at >= p.length) return null
+    const off = Math.hypot(x - (p.x0 + dx * t), z - (p.z0 + dz * t))
+    return off <= PARADE.corridor ? at : null
+  }
+
   floatAt(now) {
     const p = this.round.path, t = this.travelled(now) / p.length
     return [p.x0 + (p.x1 - p.x0) * t, p.z0 + (p.z1 - p.z0) * t]
@@ -153,13 +172,15 @@ export class Round {
     for (const o of this.obstacles.values()) {
       if (o.state === "gone") continue
       const i = THREE.MathUtils.clamp(Math.floor(o.at / len * SLOTS), 0, SLOTS - 1)
-      const b = buckets.get(i) ?? { n: 0, kinds: {} }
+      const b = buckets.get(i) ?? { n: 0, rubble: 0, kinds: {} }
       b.n++; b.kinds[o.kind] = (b.kinds[o.kind] ?? 0) + 1
+      if (o.state === "rubble" || o.kind === "d") b.rubble++
       buckets.set(i, b)
     }
     const html = [...buckets].sort((a, b) => a[0] - b[0]).map(([i, b]) => {
       const kind = Object.entries(b.kinds).sort((a, c) => c[1] - a[1])[0][0]
-      return `<span class="route-icoon${b.n > 1 ? " meer" : ""}" style="bottom:${((i + 0.5) / SLOTS * 100).toFixed(1)}%" data-n="${b.n}">${ICON[kind] ?? ICON.m}</span>`
+      const icon = kind === "d" || b.rubble >= b.n ? RUBBLE_ICON : ICON[kind] ?? ICON.m
+      return `<span class="route-icoon${b.n > 1 ? " meer" : ""}" style="bottom:${((i + 0.5) / SLOTS * 100).toFixed(1)}%" data-n="${b.n}">${icon}</span>`
     }).join("")
     if (html !== container.routeHtml) { container.routeHtml = html; q(".route-iconen").innerHTML = html }
   }

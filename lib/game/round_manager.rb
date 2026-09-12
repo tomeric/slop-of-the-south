@@ -27,6 +27,7 @@ module Game
       @room, @arena, @threaded = room, arena, threaded
       @publish = publish || ->(payload) { ActionCable.server.broadcast("game:#{room}", payload) }
       @mutex, @players, @round, @vote, @dirty, @seq = Mutex.new, {}, nil, nil, {}, 0
+      @fresh = false                                     # an obstacle was added: the list itself changed
     end
 
     # returns the `sync` payload for the new subscriber; the same player in several tabs is counted once
@@ -79,6 +80,17 @@ module Game
       end
     end
 
+    # ats: [distance along the route, ...] where a client's debris came to rest. New heaps leave with the next
+    # tick's `round` message, because they are obstacles and the whole obstacle list travels there.
+    def debris(player_id, ats, now = Game.now_ms)
+      @mutex.synchronize do
+        return unless @round&.running? && @players[player_id]
+        made = ats.filter_map { @round.debris(_1, now) }
+        @fresh = true if made.any?
+        made.each { @dirty[_1.key] = _1 }
+      end
+    end
+
     def teleport(player_id, x, z, now = Game.now_ms)
       act(player_id, now, "teleport") do
         next "status" unless @round&.running?
@@ -109,6 +121,9 @@ module Game
           end
         end
         # the running euro total rides with the verdicts, which is exactly when it moves
+        # a new heap of rubble is a new obstacle, so the whole list has to go out again rather than just its state
+        msgs << round_msg if @fresh
+        @fresh = false
         msgs << { type: "object", list: @dirty.values.map { @round.obj_h(_1) }, damage: @round.damage.round } if @dirty.any?
         @dirty.clear
         msgs.compact

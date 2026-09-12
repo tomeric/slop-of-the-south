@@ -12,6 +12,14 @@ module Game
 
     MAX_WOZ        = 50_000_000                   # € a client may claim one building is worth (lib/tasks/woz.rake caps it there)
 
+    # Debris in the road. A heap covers this much of the route, costs this much to sweep aside, and may only be
+    # reported this far ahead of the float — anything nearer would be a heap the parade has no time to get past,
+    # and anything behind it has already been driven through.
+    DEBRIS_SLOT    = 8.0
+    DEBRIS_HP      = 30
+    DEBRIS_AHEAD   = 40.0
+    DEBRIS_MAX     = 60                           # heaps at once, so a demolition derby cannot fill the route
+
     Obj    = Struct.new(:key, :kind, :x, :z, :at, :hp, :max, :state, :woz, keyword_init: true)   # at: nil for objects off the path
     Player = Struct.new(:id, :name, :vehicle, :joined_at, :last_action_at, :x, :z, :tabs, keyword_init: true)
 
@@ -47,6 +55,37 @@ module Game
     end
 
     def blocker = obstacles.find { _1.state != :gone }
+
+    # A heap of rubble has come to rest in the road. The clients report where their own debris settled; the route is
+    # bucketed so a house that sheds fifty pieces over eight metres becomes one thing to clear rather than fifty,
+    # and it only counts ahead of the float, since rubble behind it is rubble the parade has already passed.
+    def debris(at, now)
+      return unless running?
+      ahead = travelled(now) + DEBRIS_AHEAD
+      return unless at > ahead && at < length
+      slot = (at / DEBRIS_SLOT).floor
+      key = "d:#{slot}"
+      if (obj = objects[key])
+        return if obj.state == :gone
+        obj.hp = [ obj.hp + DEBRIS_HP, MAX_HP ].min
+        obj.max = [ obj.max, obj.hp ].max
+        return obj
+      end
+      return if objects.count { |_, o| o.kind == "d" } >= DEBRIS_MAX
+      mid = slot * DEBRIS_SLOT + DEBRIS_SLOT / 2
+      x, z = point_at(mid)
+      obj = Obj.new(key:, kind: "d", x: x.round(2), z: z.round(2), at: mid, hp: DEBRIS_HP, max: DEBRIS_HP, state: :intact)
+      objects[key] = obj
+      i = obstacles.index { _1.at > mid } || obstacles.size      # the list is kept in route order; blocker walks it
+      obstacles.insert(i, obj)
+      obj
+    end
+
+    # a point this far along the route
+    def point_at(d)
+      t = (d / length).clamp(0.0, 1.0)
+      [ path[:x0] + (path[:x1] - path[:x0]) * t, path[:z0] + (path[:z1] - path[:z0]) * t ]
+    end
 
     # :lost when the float's nose reaches something still standing, :won when it reaches the far edge
     def check(now)

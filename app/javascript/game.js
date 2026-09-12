@@ -104,6 +104,16 @@ async function main() {
   // a panel broken off a house counts against the same hit points ramming it would, so demolishing it by hand and
   // driving into it end in the same place as far as the server is concerned
   structures.onDamage = (obj, dmg) => combat.queue(obj, dmg)
+  // Rubbish in the road. A piece that comes to rest on the parade route is something the float has to get past, so
+  // where it landed is reported and the server buckets it into heaps everyone shares (Game::Round#debris). Sweeping
+  // one aside carts off the pieces lying there, since the heap and the mess are the same thing.
+  const settled = new Set()
+  physics.onSettle = (x, y, z) => {
+    if (vrij || settled.size > 24) return
+    const at = round.onRoute(x, z)
+    if (at !== null) settled.add(Math.round(at))
+  }
+  index.onSwept = (obj) => physics.sweep(obj.x, obj.z, obj.r + 2)
   index.onDown = (obj) => structures.demolish(obj)          // the server says it is rubble: everything still up lets go
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
@@ -160,7 +170,7 @@ async function main() {
     },
   })
   picker.show(car.spec.id, true)
-  window.slop = { world, dayNight, shadows, facades, structures, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vehicleSpec, vrij, tuning: TUNING }   // for poking at the scene from the console
+  window.slop = { world, dayNight, shadows, facades, structures, physics, car, remotes, chunks, round, parade, index, combat, effects, pickups, scatter, environment, music, loading, picker, voteScreen, preview, applySpec, vehicleSpec, vrij, tuning: TUNING, net: () => net }   // for poking at the scene from the console
   const vrijLink = el("vrij-link")
   vrijLink.textContent = vrij ? "Terug naar de optocht" : "Vrij rijden"
   vrijLink.href = vrij ? location.pathname : "?vrij"
@@ -201,7 +211,7 @@ async function main() {
   if (bench) { config.spawn = { x: benchSpot.x, z: benchSpot.z, yaw: benchSpot.yaw }; car.reset(config.spawn); dayNight.fixedHours ??= 13; picker.hide() }
   window.slop.bench = bench
   const timer = new THREE.Timer()
-  let netTimer = 0, signTimer = 0, borderTimer = 0
+  let netTimer = 0, debrisTimer = 0, signTimer = 0, borderTimer = 0
   const heightAt = (x, z) => chunks.heightAt(x, z), tileIndex = (x, z) => chunks.tileIndex(x, z)
 
   function frame(now) {
@@ -283,6 +293,12 @@ async function main() {
 
     netTimer += dt
     if (netTimer > 0.1) { netTimer = 0; net.sendMove(car.state()); combat.flush() }
+    debrisTimer += dt
+    if (debrisTimer > TUNING.parade.report && settled.size) {
+      debrisTimer = 0
+      net.send("debris", { ats: [...settled] })
+      settled.clear()
+    }
 
     signTimer += dt
     if (signTimer > 0.25) {

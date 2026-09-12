@@ -169,6 +169,9 @@ export const TUNING = {
     grind: 2e-4,                            // hit points per newton of traction per second, leaning on a wall
     landMin: 4,                             // m/s of landing before the underside counts as a hit
   },
+  // The parade and what gets in its way. `heap` is how wide one of the server's rubble heaps is to drive into;
+  // `report` how often a client tells the server where its debris came to rest (the channel allows 2 a second).
+  parade: { heap: 4, report: 0.5 },
   money: { label: 40000 },                  // € off one building before a bang goes up over it: ~7 to flatten a house (live)
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)

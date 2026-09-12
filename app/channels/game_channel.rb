@@ -3,8 +3,9 @@
 # picks the next town between rounds. The
 # room's Game::RoundManager owns the round; a new subscriber gets the whole state in a `sync`.
 class GameChannel < ApplicationCable::Channel
-  RATES = { "move" => 15, "hit" => 20, "fire" => 10, "teleport" => 2, "switch" => 2, "vote" => 2, "rename" => 2 }.freeze   # messages per second
+  RATES = { "move" => 15, "hit" => 20, "fire" => 10, "debris" => 2, "teleport" => 2, "switch" => 2, "vote" => 2, "rename" => 2 }.freeze   # messages per second
   MAX_HITS = 32
+  MAX_DEBRIS = 24
 
   def subscribed
     @room = params[:room].to_s.presence || "main"
@@ -59,6 +60,14 @@ class GameChannel < ApplicationCable::Channel
   end
 
   # data: { x, z }
+  # data: { ats: [metres along the route, ...] } — where this client's rubble came to rest. The server buckets them
+  # into heaps the parade has to get past; see Game::Round#debris.
+  def debris(data)
+    return unless allowed?("debris")
+    ats = Array(data["ats"]).first(MAX_DEBRIS).filter_map { |a| a.to_f if a.to_f.positive? }
+    manager.debris(player_id, ats) if ats.any?
+  end
+
   def teleport(data)
     return unless allowed?("teleport")
     answer manager.teleport(player_id, data["x"].to_f, data["z"].to_f)
