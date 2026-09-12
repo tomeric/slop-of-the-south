@@ -141,17 +141,32 @@ export class Combat {
     const hl = spec.length / 2, ht = spec.track / 2, v = car.speed
     const probes = [[-1, hl], [1, hl], [0, hl], [-1, -hl], [1, -hl], [0, -hl], [-1, hl * 0.5], [-1, 0], [-1, -hl * 0.5], [1, hl * 0.5], [1, 0], [1, -hl * 0.5]]
     if (Math.abs(v) * dt > 1) probes.push([0, (v > 0 ? hl : -hl) - v * dt / 2])             // swept: a fast car skips no wall
+    // Which contact counts. The probes run nose first and the old loop stopped at the first hit, so the moment a
+    // car overlapped a footprint at all the bumper won — which is every slide into a wall, and why swinging the
+    // tail in was billed as though you had driven at it nose on.
+    //
+    // Sorting by closing speed does not work either: `hitPoint` returns the way *out*, so a probe inside the
+    // building and a probe outside it report opposite normals, and the deepest-in probe looks like the fastest
+    // closing one. So rank by intent instead — while the car is properly sideways the back half is what you meant
+    // to hit, and among equals the deepest contact wins.
+    const sideways = car.drifting && Math.abs(car.slip) > T.drift.chargeSlip
+    let best = null
     for (const [side, along] of probes) {
       const px = car.x + f.x * along + rx * side * ht, pz = car.z + f.z * along + rz * side * ht
       const hit = this.index.hitPoint(px, pz, 0.3)
       if (!hit) continue
+      if (car.airborne && !hit.obj.rings) continue
+      const rank = sideways && along < 0 ? 1 : 0
+      if (!best || rank > best.rank || (rank === best.rank && hit.depth > best.hit.depth)) best = { hit, px, pz, side, along, rank }
+    }
+    if (best) {
+      const { hit, px, pz, along } = best
       const { obj, nx, nz, depth } = hit
-      if (car.airborne && !obj.rings) continue
       const flank = Math.abs(nx * rx + nz * rz) > Math.abs(nx * f.x + nz * f.z)               // the wall faces the side, not the nose
       // Rubble, either kind: what a building crumbled to, or a heap the server has put in the parade's way. You
       // plough through it rather than off it — the pieces lying there are real bodies and slow the car themselves,
       // so nothing here has to pretend to.
-      if (obj.state === 1 || obj.kind === "d") { this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
+      if (obj.state === 1 || obj.kind === "d") { this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); return }
       const into0 = -(car.vx * nx + car.vz * nz)
       // Which part of you arrived, worked out once for every branch below. The whole back half counts as the ram,
       // not just the tail — a drift puts a rear quarter into the wall long before it puts the bumper there — and it
@@ -161,13 +176,31 @@ export class Combat {
       // This used to live in the ram branch alone, which is to say it never happened: a house near enough to drive
       // into is a house built out of pieces, and those are answered further up and left without a multiplier. The
       // trike's ram and the truck's flanks were both doing nothing at all to real buildings.
-      const swung = car.drifting && nx * f.x + nz * f.z > 0 && Math.abs(car.slip) > T.drift.chargeSlip
+      // Which part of you arrived — the probe's own place on the car, not the direction the wall happens to face.
+      // Anything on the back half is the ram, because a slide puts a rear quarter into the wall long before it puts
+      // the tail there, and it only counts while the car is properly sideways: a ram is a thing you swing, not a
+      // thing you reverse into. Reversing can never qualify, `drifting` needing forward speed to exist at all.
+      // one blow per impact, not one per frame: a car held against a wall would otherwise dissolve the building
+      const fresh = this.rammed(obj)
+      const swung = sideways && along < 0
       const mult = swung ? spec.rear ?? 1 : flank ? spec.side ?? 1 : 1
+      // A tail coming round is not closing on the wall along its own normal — it is arriving sideways — so what it
+      // hits with is simply how fast it is travelling, not the component the push-out maths happens to report.
+      const swing = Math.hypot(car.vx, car.vz)
+      // A ram landing should take a hole out of the wall, not merely bill for one. Driving through a house does its
+      // damage by breaking panels (plough), which is why the nose felt so much stronger than the tail.
       const landed = (into) => {
-        if (!swung) return
+        if (!swung || !fresh) return
         this.effects.shake(Math.min(0.9, 0.3 + into / 24))
         this.effects.dust(px, car.y + 0.5, pz, 2.6)
         this.physics?.burst(px, car.y + 0.7, pz, 1.5, T.physics.pieces.chips, "steen")
+        const entry = this.structures?.get(obj.key)
+        if (!entry) return
+        let n = 0
+        for (const h of this.physics.near(px, car.y + 0.9, pz, T.damage.ramReach)) {
+          if (n >= T.damage.ramPanels) break
+          n += this.structures.break(h.entry, h.piece, nx * -6, 2.5, nz * -6)
+        }
       }
       // A house built out of pieces is not a footprint any more. hitPoint still answers with the outline BAG
       // surveyed, but what is actually in the way is whatever panels are still standing there — so ask the physics
@@ -177,31 +210,30 @@ export class Combat {
         // door, and asking only about the building hitPoint happened to name left the car gliding through the one
         // that was actually in the way.
         const here = this.physics.near(px, car.y + 0.7, pz, T.physics.smash.reach)
-        if (!here.length) continue                                     // the wall that stood here is gone: drive on
+        if (!here.length) return                                       // the wall that stood here is gone: drive on
         // What it takes to go through one is the vehicle's business, not the world's: the truck leans on it at
         // walking pace behind its blade, a trike has to be reckless.
         if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
-          this.queue(obj, this.energy(car, into0, mult * T.damage.through))   // the panels are plough()'s business
-          landed(into0)
-          break
+          this.queue(obj, this.energy(car, swung ? swing : into0, mult * T.damage.through))   // panels are plough()'s
+          landed(swung ? swing : into0)
+          return
         }
         // Swinging a ram into a wall is not "driving through" it, so it does not have to beat smashMin to count.
-        if (swung && this.rammed(obj)) { this.queue(obj, this.energy(car, into0, mult * T.damage.through)); landed(into0) }
-        break                                                           // too slow to break it: plough() bills the lean
+        if (swung && fresh) { this.queue(obj, this.energy(car, swing, mult * T.damage.through)); landed(swing) }
+        return                                                          // too slow to break it: plough() bills the lean
       }
-      if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { this.queue(obj, this.energy(car, v, T.damage.through) * dt * 4); this.effects.shake(0.05); break }
+      if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { this.queue(obj, this.energy(car, v, T.damage.through) * dt * 4); this.effects.shake(0.05); return }
       car.x += nx * depth; car.z += nz * depth
-      const into = -(car.vx * nx + car.vz * nz)                                              // speed into the wall
-      if (into <= 0) continue
+      const into = best.into                                                                 // speed into the wall
+      if (into <= 0) return
       const wx = car.vx + nx * into * 1.2, wz = car.vz + nz * into * 1.2                    // that part reverses to a fifth
       car.speed = wx * f.x + wz * f.z; car.lateral = wx * rx + wz * rz; car.vx = wx; car.vz = wz
-      if (into > 2 && this.rammed(obj)) {
-        this.queue(obj, this.energy(car, into, mult))
-        landed(into)
+      if (into > 2 && fresh) {
+        this.queue(obj, this.energy(car, swung ? swing : into, mult))
+        landed(swung ? swing : into)
         this.effects.dust(px, car.y + 0.6, pz, 1.5)
         this.effects.shake(Math.min(0.6, into / 30))
       }
-      break
     }
   }
 

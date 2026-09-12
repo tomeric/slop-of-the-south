@@ -479,6 +479,16 @@ in the ram branch alone, which is to say it never happened at all: a house near 
 built out of pieces, and those are answered further up — so the trike's ram and the truck's flanks were both doing
 nothing whatsoever to real buildings.
 
+*Which contact* counts took two goes. The twelve probes run nose first and the loop stopped at the first hit, so the
+moment a car overlapped a footprint at all the bumper won — which is every slide into a wall. Ranking them by
+closing speed does not work either, because `hitPoint` answers with the way *out*: a probe inside the building and a
+probe outside it report opposite normals, so the deepest-in probe looks like the fastest-closing one. They are
+ranked by intent instead — while the car is properly sideways the back half is what you meant to hit, deepest
+contact winning among equals — and a tail arriving sideways is billed at the speed it is actually travelling rather
+than the component the push-out maths reports. A landed ram also knocks `damage.ramPanels` out of the wall where it
+hits, once per impact rather than once per frame, because driving through a house does its damage by breaking
+panels and a ram that only billed for one felt feeble next to it.
+
 **Driving through one.** A chassis that is really there is stopped by a wall the moment it touches one, and a wall
 is several panels thick — so breaking a few at a probe point leaves you stalled against the rest of the house.
 Above the vehicle's smash speed it sweeps everything out of a ball just in front of the bumper instead, sized by

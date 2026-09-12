@@ -177,6 +177,7 @@ export const TUNING = {
     through: 0.25,                          // a wall you go through takes a quarter: the panels bill the rest
     grind: 2e-4,                            // hit points per newton of traction per second, leaning on a wall
     landMin: 4,                             // m/s of landing before the underside counts as a hit
+    ramReach: 2.0, ramPanels: 6,            // a swung ram knocks this much of the wall out where it lands
   },
   // The parade and what gets in its way. `heap` is how wide one of the server's rubble heaps is to drive into;
   // `report` how often a client tells the server where its debris came to rest (the channel allows 2 a second).
