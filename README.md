@@ -513,9 +513,11 @@ the world is looked at while working on how it looks.
   rather than a rocket: full thrust on the deck, nothing left by `thrust.height`, and a damping term against the
   climb, so it lifts to about nine metres, hovers there while the meter lasts and settles back down. Because the
   four jets push along the *body's* up at four separate points, a truck that is already tilted gets shoved sideways
-  and rolled further — a bad landing can be saved or made a great deal worse. The old arcade jump, and the crest
-  heuristic that guessed when a hill had thrown you, are both gone: you are in the air when no wheel is touching
-  anything.
+  and rolled further — a bad landing can be saved or made a great deal worse. Four nozzles under the rail wear the
+  same flame-and-plume pair the rockets do. The old arcade jump, and the crest heuristic that guessed when a hill
+  had thrown you, are both gone: you are in the air when no wheel is touching anything.
+- **Upside down**: **Q** rights any vehicle where it stands, and one that has been both wrong way up and going
+  nowhere for `car.rightAfter` seconds picks itself up without being asked.
 - **Camera**: critically damped springs for position, aim and yaw; at speed it sits behind the velocity rather than the
   nose so a drift is visible; distance, height and field of view grow with speed and boost; it never sinks below the
   ground.

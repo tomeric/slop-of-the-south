@@ -232,7 +232,8 @@ async function main() {
     const upd0 = performance.now()
     if (chunks.ready(car.x, car.z)) {
       if (input.reset) { car.reset(config.spawn); placed = false }
-      if (input.flip) { car.rightUp(); effects.dust(car.x, car.y + 0.3, car.z, 1.6) }
+      if (input.flip) { car.rightUp(); car.righted = true }
+      if (car.righted) { car.righted = false; effects.dust(car.x, car.y + 0.3, car.z, 1.6); effects.shake(0.12) }
       if (!placed && physics.ctrl) {
         let x = car.x, z = car.z, yaw = car.yaw
         if (snapToRoad) {

@@ -12,27 +12,32 @@ export class VehicleFx {
     this.rear = (mesh.userData.wheels ?? []).filter((w) => !w.front)
     this.acc = 0
     this.power = 0
-    this.jet = 0
-    this.wheels = mesh.userData.wheels ?? []
+    this.jetAcc = 0
+    this.jets = mesh.userData.jets ?? []
   }
 
   update(state, dt) {
     const F = T.fx
-    // the monster truck's thrusters: a column of exhaust under each corner while they are lit. The wheel contacts
-    // are already worked out every frame and sit under the chassis rail, which is close enough to hang it on.
-    if (state.thrusting && this.pool) {
-      this.jet += F.smokeRate * 1.6 * dt
-      while (this.jet >= 1) {
-        this.jet -= 1
-        for (const w of this.wheels) {
-          const p = state.wheelWorld?.[this.wheels.indexOf(w)]
-          if (!p) continue
-          this.pool.emit(p.x + (Math.random() - 0.5) * 0.4, p.y + 0.2, p.z + (Math.random() - 0.5) * 0.4,
-            (Math.random() - 0.5) * 1.5, -6 - Math.random() * 4, (Math.random() - 0.5) * 1.5,
-            0.45, 0.5, 2.4, 0.75)
+    // The monster truck's thrusters: a flame at each nozzle and a plume behind it, the same pair the trike's rockets
+    // wear. The nozzles are children of the mesh, so their world positions come off the matrix once a frame.
+    const lit = !!state.thrusting
+    for (const s of this.jets) {
+      s.visible = lit
+      if (lit) s.scale.setScalar(0.9 + 0.5 * Math.random())
+    }
+    if (lit && this.pool && this.jets.length) {
+      this.mesh.updateMatrixWorld()
+      this.jetAcc += F.smokeRate * 1.4 * dt
+      while (this.jetAcc >= 1) {
+        this.jetAcc -= 1
+        for (const s of this.jets) {
+          s.getWorldPosition(_p)
+          this.pool.emit(_p.x + (Math.random() - 0.5) * 0.3, _p.y - 0.2, _p.z + (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 2, -5 - Math.random() * 4, (Math.random() - 0.5) * 2,
+            0.55, 0.45, 2.6, 0.7)
         }
       }
-    } else this.jet = 0
+    } else this.jetAcc = 0
     // smoke: a steady stream of puffs from each rear wheel, carried along a little with the car and rising
     if (state.smoking && this.pool) {
       this.acc += F.smokeRate * dt

@@ -129,6 +129,7 @@ export const TUNING = {
       frictionSlip: 2.0, sideStiffness: 1.0, handbrakeSlip: 0.25,   // what the rear tyres keep on the handbrake
       angularDamping: 0.5, hullFriction: 0.4, contactForce: 2000,
       maxFall: 14, floorDrop: 6, dropIn: 0.4,   // dropIn: how far above the ground a teleport puts the car down
+      rightAfter: 5, stuckSpeed: 1.0,           // seconds upside down and going nowhere before it rights itself
     },
     // The monster truck's thrusters: held down, not fired. `ratio` is thrust to weight at a standstill, tapering to
     // exactly hover as the climb reaches `vMax` — flat thrust would be a rocket, not a jump. `drainScale` is the

@@ -230,6 +230,13 @@ export class Vehicle {
     if (down === 0) this.fellAt = st.vy
     this.wasDown = down
 
+    // On your roof in a ditch with nothing to push against, there is nothing you can do but wait — so after a few
+    // seconds of being both wrong way up and going nowhere, it picks itself up without being asked. Q does it on
+    // demand; this is for when you have not worked out that Q exists yet.
+    const still = Math.hypot(st.vx, st.vz) < T.physics.car.stuckSpeed && Math.abs(st.vy) < T.physics.car.stuckSpeed
+    this.stuckT = (!this.upright && still) ? (this.stuckT ?? 0) + dt : 0
+    if (this.stuckT > T.physics.car.rightAfter) { this.stuckT = 0; this.righted = true; this.rightUp() }
+
     this.drift(dt)
     this.susp.update(this, this.quat, dt)
   }

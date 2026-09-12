@@ -9,13 +9,13 @@ import { casts } from "game/Shadows"
 // The mesh builders honour the contract the suspension and the effects expect: userData.wheels (a pivot per wheel
 // at its corner, with its radius), userData.lights (head and tail materials) and userData.flames (exhaust sprites).
 export const VEHICLES = [
-  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Eén raketwerper, een raket om de 2,5 seconde.",
+  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Eén raketwerper, een raket om de driekwart seconde.",
     maxSpeed: 32, accel: 11, brakeForce: 20, maxSteer: 0.6, wheelbase: 1.9, track: 1.4, length: 2.6,
     ram: 0.02, side: 1, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },
     mass: 350, com: 0.45, grip: 1.0, bite: 0.25,           // kg, centre of mass above the contact patch
     body: { hx: 0.6, hy: 0.42, hz: 1.1, y: 0.76, z: 0.2 }, // the hull, clear of the ground: the wheels carry the car
     smashMin: 13, smashPanels: 2, smashLoss: 1.4,          // it takes a proper run-up, and the wall takes it out of you
-    ability: { kind: "missile", cooldown: 2.5, hint: "E raket" } },
+    ability: { kind: "missile", cooldown: 0.75, hint: "E raket" } },
   { id: "monster", naam: "Monstertruck", blurb: "Even snel, hoog op de wielen. Springt en verplettert wat eronder ligt; drift met je flank tegen een huis voor de meeste schade.",
     maxSpeed: 32, accel: 9, brakeForce: 18, maxSteer: 0.5, wheelbase: 3.4, track: 2.4, length: 5.0,
     ram: 0.4, side: 2.5, clear: 1.0, push: false, pushMin: 0, cam: { dist: 1.25, height: 1.3 },
@@ -82,10 +82,11 @@ function flames(g, xs, y, z) {
   return xs.map((x) => { const s = new THREE.Sprite(flameMaterial()); s.position.set(x, y, z); s.scale.setScalar(0); s.visible = false; g.add(s); return s })
 }
 
-function finish(g, m, wheels, fl = []) {
+function finish(g, m, wheels, fl = [], jets = []) {
   g.userData.lights = { head: m.head, tail: m.tail }
   g.userData.wheels = wheels
   g.userData.flames = fl
+  g.userData.jets = jets
   return g
 }
 
@@ -125,7 +126,16 @@ function makeMonster(color) {
   for (const [x, z] of [[-1.2, -1.7], [1.2, -1.7], [-1.2, 1.7], [1.2, 1.7]]) box(g, m.steel, 0.2, 0.9, 0.2, x * 0.7, 1.15, z)   // axles
   const wheels = [[-1.2, -1.7], [1.2, -1.7], [-1.2, 1.7], [1.2, 1.7]].map(([lx, lz]) => wheel(g, m.dark, lx, lz, 0.9, 0.7))
   lamps(g, m, -2.12, 2.12, 1.85, [-0.6, 0.6])
-  return finish(g, m, wheels, flames(g, [-0.5, 0.5], 1.5, 2.3))
+  // the thruster nozzles and their flames, under the chassis rail at the four corners (game/Vehicle.js lights them)
+  const jets = []
+  for (const [x, z] of [[-0.7, -1.5], [0.7, -1.5], [-0.7, 1.5], [0.7, 1.5]]) {
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.32, 8), m.dark)
+    nozzle.position.set(x, 1.05, z); g.add(nozzle)
+    const s = new THREE.Sprite(flameMaterial())
+    s.position.set(x, 0.7, z); s.scale.setScalar(0); s.visible = false; g.add(s)
+    jets.push(s)
+  }
+  return finish(g, m, wheels, flames(g, [-0.5, 0.5], 1.5, 2.3), jets)
 }
 
 // a bulldozer: a squat hull on tracks, a cab, and a blade on two arms out front
