@@ -7,10 +7,9 @@ import { TUNING as T, euro } from "game/Tuning"
 // missiles, the monster truck's jump and the bulldozer's blade. Everything here is local prediction plus messages:
 // damage is queued per object and sent to the server in `hit` batches, the server decides when something falls
 // (Destructibles.apply), and `fire` tells the other players what to draw. Explosions also shove nearby cars.
-const STEP = 1.5                     // metres a shot may travel between hit tests
-const MISSILE = { speed: 60, life: 3, r: 6, dmg: 70 }
 const JUMP = { r: 4, dmg: 90 }          // what a hard landing crushes under the monster truck
 const BLADE = { lift: 0.35, tilt: 0.32, rate: 2.5, slam: 150, reach: 2.2 }   // the arms rise and pivot up (rad), per second, damage on the way
+const _mz = new THREE.Vector3(), _dir = new THREE.Vector3()
 const shotMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d0, metalness: 0.5, roughness: 0.4 })
 const noseMat = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.5 })
 const finMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 })
@@ -207,17 +206,34 @@ export class Combat {
     const a = car.spec.ability
     if (a.kind === "none" || a.kind === "thrust" || !input.ability || this.cd > 0) return
     switch (a.kind) {
-      case "missile": { const f = car.forward(), rx = -f.z, rz = f.x, n = car.spec.length / 2 + 0.8; this.shoot(car.x + f.x * n + rx * 0.55, car.y + 1.05, car.z + f.z * n + rz * 0.55, f, true); break }
+      case "missile": this.launch(car, true); break
       case "blade":   this.toggleBlade(car.mesh, true); break
     }
     this.cd = a.cooldown
-    this.send("fire", { kind: a.kind, x: car.x, y: car.y, z: car.z, yaw: car.yaw })
+    this.send("fire", { kind: a.kind, x: car.x, y: car.y, z: car.z, yaw: car.yaw, ...(this.lastShot ?? {}) })
   }
 
   get cooldownFraction() { const c = this.car?.spec.ability.cooldown; return c ? this.cd / c : 0 }
 
+  // Fire from where the launcher actually is. The tube is a group on the trike's own mesh, so its muzzle and the
+  // direction it points come off the matrix — which is the end of the two copies of those offsets that used to sit
+  // in this file, one of which had the lateral sign the wrong way round and put every other player's rocket out of
+  // the far side of the trike. The trike's own velocity goes with it, because a rocket does not forget it was moving.
+  launch(car, own) {
+    const a = car.mesh?.userData.anim
+    if (!a?.muzzle) return
+    car.mesh.updateMatrixWorld()
+    a.muzzle.getWorldPosition(_mz)
+    a.launcher.getWorldDirection(_dir).negate()              // getWorldDirection is +z; the muzzle points down -z
+    const M = T.missile
+    const vx = car.vx + _dir.x * M.speed, vy = (car.vy ?? 0) + _dir.y * M.speed, vz = car.vz + _dir.z * M.speed
+    this.lastShot = { mx: +_mz.x.toFixed(2), my: +_mz.y.toFixed(2), mz: +_mz.z.toFixed(2),
+                      vx: +vx.toFixed(2), vy: +vy.toFixed(2), vz: +vz.toFixed(2) }
+    this.shoot(_mz.x, _mz.y, _mz.z, vx, vy, vz, own)
+  }
+
   // a missile: body, red nose, fins and a flame at the tail; it leaves a smoke trail while it flies
-  shoot(x, y, z, f, own) {
+  shoot(x, y, z, vx, vy, vz, own) {
     const mesh = new THREE.Group()
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.3, 10), shotMat); body.rotation.x = Math.PI / 2; mesh.add(body)
     const nose = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 10), noseMat); nose.rotation.x = -Math.PI / 2; nose.position.z = -0.85; mesh.add(nose)
@@ -225,31 +241,44 @@ export class Combat {
     flameMat ??= new THREE.SpriteMaterial({ map: softTexture(), color: 0xff9a2a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
     const flame = new THREE.Sprite(flameMat); flame.position.z = 0.95; flame.scale.setScalar(0.9); mesh.add(flame)
     mesh.position.set(x, y, z)
-    mesh.lookAt(x + f.x, y, z + f.z)
+    mesh.lookAt(x + vx, y + vy, z + vz)
     this.scene.add(mesh)
-    this.shots.push({ mesh, flame, x, y, z, vx: f.x * MISSILE.speed, vy: 0, vz: f.z * MISSILE.speed, life: MISSILE.life, own, puff: 0 })
+    this.shots.push({ mesh, flame, x, y, z, vx, vy, vz, life: T.missile.life, own, puff: 0 })
   }
 
-  // every frame: shots fly in substeps no longer than STEP and burst on the first object or the ground
+  // A rocket is ballistic now: it leaves the launcher on the arc the tube is pointing along, carrying the trike's
+  // own speed with it, and falls at the same gravity everything else does. What it flew into comes from one ray per
+  // substep against the world the car drives on — the terrain, a standing wall, a heap of rubble — rather than the
+  // old flat test of "am I below the ground, or inside a footprint's height box", which could not tell a roof from
+  // the street and never checked the vertical at all because the vertical never moved.
   projectiles(dt) {
+    const M = T.missile
     for (let i = this.shots.length - 1; i >= 0; i--) {
       const s = this.shots[i]
-      const n = Math.max(1, Math.ceil(Math.hypot(s.vx, s.vz) * dt / STEP)), h = dt / n
-      let burst = false
+      const speed = Math.hypot(s.vx, s.vy, s.vz)
+      const n = Math.max(1, Math.ceil(speed * dt / M.step)), h = dt / n
+      let burst = null
       for (let k = 0; k < n && !burst; k++) {
-        s.x += s.vx * h; s.z += s.vz * h
-        const ground = this.heightAt(s.x, s.z)
-        const hit = this.index.hitPoint(s.x, s.z, 0.5)
-        if (s.y <= ground || (hit && s.y <= ground + (hit.obj.h ?? 3) + 0.5)) burst = true
+        s.vy += T.physics.gravity * h
+        const dx = s.vx * h, dy = s.vy * h, dz = s.vz * h
+        const len = Math.hypot(dx, dy, dz) || 1e-6
+        const toi = this.physics?.rayHit(s.x, s.y, s.z, dx / len, dy / len, dz / len, len)
+        if (toi != null) burst = [s.x + dx / len * toi, s.y + dy / len * toi, s.z + dz / len * toi]
+        else {
+          s.x += dx; s.y += dy; s.z += dz
+          if (s.y <= this.heightAt(s.x, s.z)) burst = [s.x, this.heightAt(s.x, s.z), s.z]   // tiles with no collider yet
+        }
       }
-      if (burst) { this.explode(s.x, s.y, s.z, MISSILE.r, MISSILE.dmg, s.own); this.drop(i); continue }
+      if (burst) { this.explode(burst[0], burst[1], burst[2], M.r, M.dmg, s.own); this.drop(i); continue }
       if ((s.life -= dt) <= 0) { this.drop(i); continue }
       s.mesh.position.set(s.x, s.y, s.z)
+      s.mesh.lookAt(s.x + s.vx, s.y + s.vy, s.z + s.vz)       // the nose follows the arc down
       s.flame.scale.setScalar(0.7 + 0.4 * Math.random())
       if ((s.puff += dt) > 0.05) {                                                             // the exhaust plume
         s.puff = 0
-        const bx = s.x - s.vx / MISSILE.speed * 1.1, bz = s.z - s.vz / MISSILE.speed * 1.1
-        this.effects.smoke.emit(bx, s.y, bz, (Math.random() - 0.5) * 2, 1.5 + Math.random(), (Math.random() - 0.5) * 2, 0.9, 0.5, 2.4, 0.55)
+        const k = 1.1 / (speed || 1)
+        this.effects.smoke.emit(s.x - s.vx * k, s.y - s.vy * k, s.z - s.vz * k,
+          (Math.random() - 0.5) * 2, 1.5 + Math.random(), (Math.random() - 0.5) * 2, 0.9, 0.5, 2.4, 0.55)
       }
     }
   }
@@ -320,8 +349,7 @@ export class Combat {
 
   // another player's trick, as seen from here
   remoteFire(msg, mesh) {
-    const f = { x: -Math.sin(msg.yaw), z: -Math.cos(msg.yaw) }
-    if (msg.kind === "missile") this.shoot(msg.x + f.x * 2.1 - f.z * 0.55, msg.y + 1.05, msg.z + f.z * 2.1 + f.x * 0.55, f, false)
+    if (msg.kind === "missile" && msg.vx != null) this.shoot(msg.mx, msg.my, msg.mz, msg.vx, msg.vy, msg.vz, false)
     if (msg.kind === "blade" && mesh) this.toggleBlade(mesh, false)
   }
 

@@ -156,6 +156,10 @@ export const TUNING = {
   // What a hit costs: k x 1/2 m v^2 x the vehicle's `bite` x which part of it made contact. Calibrated so each
   // vehicle lands on what its old hand-picked `ram` coefficient gave at its own ramming speed, but moving with
   // mass and speed from here on instead of sitting in a table.
+  // The trike's rocket. `pitch` is how far the launcher is angled up, worked out rather than guessed: under this
+  // world's gravity, from a 1.35 m muzzle, 16 degrees sails clean over a two-storey house at every range you would
+  // ever fire from. Seven degrees at 75 m/s keeps it at wall height at 20, 40 and 80 m and still shows an arc.
+  missile: { speed: 75, life: 3, r: 6, dmg: 70, pitch: 0.12, step: 1.2 },
   damage: {
     k: 5e-4,                                // hit points per joule delivered
     through: 0.25,                          // a wall you go through takes a quarter: the panels bill the rest

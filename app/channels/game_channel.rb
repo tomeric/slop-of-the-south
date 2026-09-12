@@ -48,8 +48,12 @@ class GameChannel < ApplicationCable::Channel
   # data: { kind, x, y, z, yaw }: a shot the other players draw, nothing more
   def fire(data)
     return unless allowed?("fire")
-    broadcast(type: "fire", name: @name, kind: data["kind"].to_s.first(16),
-              x: data["x"].to_f, y: data["y"].to_f, z: data["z"].to_f, yaw: data["yaw"].to_f, t: Game.now_ms)
+    # mx/my/mz and vx/vy/vz are the muzzle and the launch velocity: a rocket flies an arc now, and the other
+    # screens have to be told the same one or their copy lands somewhere else entirely
+    shot = %w[mx my mz vx vy vz].to_h { |k| [ k.to_sym, data[k].to_f ] } if data["vx"].present?
+    broadcast({ type: "fire", name: @name, kind: data["kind"].to_s.first(16),
+                x: data["x"].to_f, y: data["y"].to_f, z: data["z"].to_f, yaw: data["yaw"].to_f,
+                t: Game.now_ms }.merge(shot || {}))
   end
 
   # data: { x, z }

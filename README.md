@@ -392,6 +392,16 @@ free. The room's running total rides out with the verdicts at 4 Hz and sits in t
 Free roam keeps its own total the same way. Every `T.money.label` euros taken off one building, a comic starburst
 goes up over it with the amount in it — and over €200k it says something.
 
+**The trike's rockets** leave a launcher that is actually on the trike: a tube down the middle, angled up, whose
+muzzle and heading are read off the model's own matrix rather than written out as literals in two places — one of
+which had the lateral sign the wrong way round, so every other player's rocket left the far side of the machine.
+The rocket is ballistic: it carries the trike's own velocity, falls at the same gravity as everything else, and
+finds what it flew into with one ray per substep against the world the car drives on, instead of the old flat test
+that never checked the vertical because the vertical never moved. How far up "angled" is was worked out rather than
+guessed — 16° sails clean over a two-storey house at every range you would fire from, so it is 7° at 75 m/s, which
+measures 83 m of range and is still at 2 m when it reaches a wall 40 m away. The launch vector rides on the `fire`
+message so every screen draws the same arc.
+
 **Lights in the rooms.** A window is not a lamp. On a house near enough to be built out of pieces, each window
 opening has a panel set back inside the wall, and that is what glows after dark — you are looking through the glass
 at a lit room, with the reveal casting across it. Its vertex colour is not a colour: red carries that room's own

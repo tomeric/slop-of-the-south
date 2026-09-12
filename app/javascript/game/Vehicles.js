@@ -109,8 +109,18 @@ function makeTrike(color) {
   box(g, m.paint, 1.2, 0.5, 2.2, 0, 0.6, 0.2)
   box(g, m.glass, 0.9, 0.35, 0.8, 0, 1.0, -0.2)
   box(g, m.steel, 0.14, 0.14, 1.2, 0, 0.9, -0.6)                  // fork
-  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.5, 12), m.steel); tube.rotation.x = Math.PI / 2; tube.position.set(0.55, 1.05, -0.3); g.add(tube)
-  box(g, m.dark, 0.1, 0.3, 0.3, 0.55, 0.85, 0.1)                   // launcher mount
+  // the launcher: down the middle of the trike and angled up, so a rocket leaves it on an arc. The group is the
+  // handle game/Combat.js reads the muzzle off, rather than two copies of these numbers written out as literals.
+  const launcher = new THREE.Group()
+  launcher.position.set(0, 1.05, -0.1)
+  launcher.rotation.x = T.missile.pitch
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.5, 12), m.steel)
+  tube.rotation.x = Math.PI / 2
+  launcher.add(tube)
+  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, -0.85); launcher.add(muzzle)
+  g.add(launcher)
+  box(g, m.dark, 0.24, 0.34, 0.3, 0, 0.82, 0.15)                   // launcher mount
+  g.userData.anim = { launcher, muzzle }
   const wheels = [wheel(g, m.dark, 0, -1.05, 0.34, 0.2), wheel(g, m.dark, -0.7, 0.9, 0.36, 0.3), wheel(g, m.dark, 0.7, 0.9, 0.36, 0.3)]
   lamps(g, m, -1.3, 1.3, 0.7, [0], 0.3)
   return finish(g, m, wheels, flames(g, [-0.35, 0.35], 0.5, 1.35))

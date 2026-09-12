@@ -445,6 +445,17 @@ export class Physics {
   torque(x, y, z) { this.chassis?.addTorque({ x, y, z }, true) }
   impulse(x, y, z) { this.chassis?.applyImpulse({ x, y, z }, true) }
 
+  // The first thing on this line, and how far along it. Used by the rocket to find what it flew into: the terrain,
+  // a standing wall or a heap of rubble, whichever comes first.
+  rayHit(ox, oy, oz, dx, dy, dz, len) {
+    if (!this.world) return null
+    this._ray ??= new this.R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
+    this._ray.origin = { x: ox, y: oy, z: oz }
+    this._ray.dir = { x: dx, y: dy, z: dz }
+    const hit = this.world.castRay(this._ray, len, true, undefined, GROUP.missile)
+    return hit ? hit.timeOfImpact : null
+  }
+
   // Where the chassis has got to: the pose to draw and the state the game reasons about.
   read(out) {
     const c = this.chassis
