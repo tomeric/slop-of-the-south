@@ -8,10 +8,17 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 // said about a tile that was not loaded yet is remembered and applied when the tile comes in.
 const CELL = 25
 const STATE = { intact: 0, rubble: 1, gone: 2 }
-const RUBBLE = [0x8a847c, 0x9a938a, 0x6f655c, 0x7d6b5a, 0xa39c93]
+// What is left lying where a thing stood, by what it was made of: a house leaves broken brick, a tree leaves logs
+// and a torn stump, street furniture leaves grey.
+const HEAP = {
+  steen: { colours: [0x9a5f4a, 0xa8705a, 0x8d5442, 0xb08a72, 0x7d6b5e], w: [0.7, 1.3], h: [0.3, 0.7], flat: 1 },
+  hout:  { colours: [0x6b4b2e, 0x7d5a38, 0x5a3f27, 0x8a6b45], w: [1.6, 2.6], h: [0.3, 0.45], flat: 0.32, log: true },
+  beton: { colours: [0x8a847c, 0x9a938a, 0x6f655c, 0x7d6b5a, 0xa39c93], w: [0.6, 1.2], h: [0.25, 0.6], flat: 1 },
+}
 const rubbleMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true })
 rubbleMat.__shared = true
 const block = new THREE.BoxGeometry(1, 1, 1)
+const round = (() => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 7); g.rotateZ(Math.PI / 2); return g })()
 const EMPTY = []
 
 export class Destructibles {
@@ -136,16 +143,22 @@ export class Destructibles {
 
 // a heap of grey and brown blocks scattered over the footprint, more for a bigger building
 function makeRubble(obj, heightAt) {
+  const M = HEAP[obj.kind === "t" ? "hout" : obj.kind === "m" || obj.kind === "b" ? "steen" : "beton"]
   const rings = obj.rings ?? [[obj.x - 1, obj.z - 1, obj.x + 1, obj.z - 1, obj.x + 1, obj.z + 1, obj.x - 1, obj.z + 1]]
-  const n = THREE.MathUtils.clamp(Math.round(area(rings) / 12), 4, 30)
+  const spread = obj.rings ? 1 : Math.max(1.5, (obj.h ?? 6) * 0.35)   // a felled tree lies well outside its own trunk
+  const n = THREE.MathUtils.clamp(Math.round(area(rings) / 12) + (obj.rings ? 0 : 4), 4, 30)
   const geos = [], color = new THREE.Color()
   let tries = 0
   while (geos.length < n && tries++ < n * 4) {
-    const x = obj.minX + Math.random() * (obj.maxX - obj.minX), z = obj.minZ + Math.random() * (obj.maxZ - obj.minZ)
-    if (!rings.some((ring) => pointInPolygon(x, z, ring))) continue
-    const w = 0.8 + Math.random() * 1.4, h = 0.5 + Math.random() * 1.0, d = 0.8 + Math.random() * 1.4
-    const g = block.clone().scale(w, h, d).rotateY(Math.random() * Math.PI).translate(x, heightAt(x, z) + h / 2 - 0.1, z)
-    color.setHex(RUBBLE[Math.floor(Math.random() * RUBBLE.length)]).multiplyScalar(0.85 + Math.random() * 0.3)
+    const x = obj.minX - spread + Math.random() * (obj.maxX - obj.minX + spread * 2)
+    const z = obj.minZ - spread + Math.random() * (obj.maxZ - obj.minZ + spread * 2)
+    if (obj.rings && !rings.some((ring) => pointInPolygon(x, z, ring))) continue
+    const w = M.w[0] + Math.random() * (M.w[1] - M.w[0])
+    const h = M.h[0] + Math.random() * (M.h[1] - M.h[0])
+    const d = M.flat * (M.w[0] + Math.random() * (M.w[1] - M.w[0]))
+    const g = (M.log ? round : block).clone().scale(w, h, M.log ? h : d)
+      .rotateY(Math.random() * Math.PI).translate(x, heightAt(x, z) + h / 2 - 0.1, z)
+    color.setHex(M.colours[Math.floor(Math.random() * M.colours.length)]).multiplyScalar(0.85 + Math.random() * 0.3)
     const cols = new Float32Array(g.attributes.position.count * 3)
     for (let i = 0; i < cols.length; i += 3) { cols[i] = color.r; cols[i + 1] = color.g; cols[i + 2] = color.b }
     g.setAttribute("color", new THREE.BufferAttribute(cols, 3))

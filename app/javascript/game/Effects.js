@@ -10,6 +10,9 @@ const debrisMat = new THREE.MeshStandardMaterial({ color: 0x8a8078, roughness: 1
 const confettiGeo = new THREE.PlaneGeometry(0.35, 0.25)
 const CONFETTI = [0xe0241a, 0xf2c14e, 0x2a9d3a].map((color) => new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }))
 let dustTex = null
+const LEAF = new THREE.Color(0x6f8f3f)                 // the colour a canopy comes apart in
+// what a thing is made of, for the rubbish it leaves: houses shed brick, trees wood, street furniture concrete
+export const debrisOf = (obj) => (obj.kind === "t" ? "hout" : obj.kind === "m" || obj.kind === "b" ? "steen" : "beton")
 const BANG_AT = 24                                    // metres in front of the camera the price labels hang
 const _at = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(), _fwd = new THREE.Vector3()
 
@@ -24,19 +27,39 @@ export class Effects {
   }
 
   // a flash growing to r, debris flying out of it, dust spreading on the ground
-  explosion(x, y, z, r) {
+  explosion(x, y, z, r, kind = "steen") {
     this.flash(x, y, z, r)
-    this.debris(x, y, z, r * 0.6, 10)
+    this.debris(x, y, z, r * 0.6, 10, kind)
     this.dust(x, y, z, r * 2)
   }
 
-  // a building came down: debris over its footprint and a dust sheet the size of the house
+  // Something came down, shedding whatever it was made of. A tree does not shed anything: it goes over, and the
+  // trunk comes apart into logs on the way (game/Physics.js `fell`).
   collapse(obj, ground) {
     const cx = (obj.minX + obj.maxX) / 2, cz = (obj.minZ + obj.maxZ) / 2
     const size = Math.max(obj.maxX - obj.minX, obj.maxZ - obj.minZ, 3)
-    this.debris(cx, ground + (obj.h ?? 6) / 2, cz, size / 2, THREE.MathUtils.clamp(Math.round(size), 6, 24))
+    if (obj.kind === "t") {
+      const a = Math.random() * Math.PI * 2
+      if (this.physics?.fell(obj.x, ground, obj.z, obj.h ?? 8, obj.r ?? 0.4, Math.cos(a), Math.sin(a))) {
+        this.leaves(obj.x, ground + (obj.h ?? 8) * 0.6, obj.z, (obj.r ?? 1) * 2.5)
+        this.dust(obj.x, ground, obj.z, 2.5)
+        this.shake(0.15)
+        return
+      }
+    }
+    this.debris(cx, ground + (obj.h ?? 6) / 2, cz, size / 2, THREE.MathUtils.clamp(Math.round(size), 6, 24), debrisOf(obj))
     this.dust(cx, ground, cz, size)
     this.shake(0.3)
+  }
+
+  // the canopy letting go: a puff of green rather than grey
+  leaves(x, y, z, r) {
+    if (!this.smoke) return
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2, d = Math.random() * r
+      this.smoke.emit(x + Math.cos(a) * d, y + (Math.random() - 0.5) * r, z + Math.sin(a) * d,
+        Math.cos(a) * 1.4, -0.6 - Math.random(), Math.sin(a) * 1.4, 1.6, 0.4, 1.5, 0.55, LEAF)
+    }
   }
 
   flash(x, y, z, r) {
@@ -48,8 +71,8 @@ export class Effects {
 
   // Real rigid bodies when the physics world is up, and the old hand-integrated boxes when it is not (?fysica=0, or
   // the first second of the page while the engine is still compiling). The difference is that these land.
-  debris(x, y, z, r, n) {
-    if (this.physics?.burst(x, y, z, r, n)) return
+  debris(x, y, z, r, n, kind = "steen") {
+    if (this.physics?.burst(x, y, z, r, n, kind)) return
     for (let i = 0; i < n; i++) {
       const mesh = new THREE.Mesh(debrisGeo, debrisMat)
       mesh.castShadow = mesh.receiveShadow = true

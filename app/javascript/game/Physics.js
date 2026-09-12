@@ -34,7 +34,17 @@ const GROUP = {                                       // (what I am << 16) | (wh
   query: (4 << 16) | (1 | 2 | 4),
 }
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
-const CHIP_COLOURS = [0x9a9186, 0x8a8078, 0xa89c8c, 0x77706a, 0xb0a595]
+// What the world is made of when it stops being a wall. `box` is the shape, as multiples of the chip's size, and it
+// is baked into the geometry so the per-instance scale can stay a single number; `share` is the slice of the pool it
+// gets. Keep every `box` dimension at or above `chips.minChip / size` or the collider is floored to it and the
+// drawn piece sits proud of the ground.
+const DEBRIS = {
+  steen: { box: [1, 0.6, 0.55], size: 1.0, share: 0.4, colours: [0x9a5f4a, 0xa8705a, 0x8d5442, 0xb08a72, 0x7d6b5e] },
+  glas:  { box: [1, 0.45, 0.8], size: 0.95, share: 0.2, colours: [0xa8c4d4, 0x9bb8c8, 0xc2d8e4], rough: 0.12,
+           density: 700, bounce: 0.2, mat: { transparent: true, opacity: 0.62, metalness: 0.2 } },
+  hout:  { box: [1, 0.45, 0.45], size: 1.25, share: 0.2, log: true, colours: [0x6b4b2e, 0x7d5a38, 0x5a3f27, 0x8a6b45] },
+  beton: { box: [1, 0.4, 0.85], size: 1.1, share: 0.2, colours: [0x8d8a84, 0x7a7670, 0x9c988f, 0x6e5a52, 0x8a4f3c] },
+}
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4()
 const _q2 = new THREE.Quaternion()
 const _up = new THREE.Vector3(0, 1, 0)
@@ -48,6 +58,7 @@ export class Physics {
     this.tiles = new Map()                            // tile key → the heightfield body
     this.waiting = []                                 // tiles that arrived while the engine was still loading
     this.chips = []                                   // the pool: every dynamic body in the world today
+    this.pools = new Map()                            // material → its own slice of the pool and its own mesh
     this.pieces = new Map()                           // collider handle → { entry, piece } for everything standing
     this.solids = new Map()                           // key → the slab body standing in for a building with no pieces
     this.moving = new Set()                           // the pieces that have come loose and are still moving
@@ -67,7 +78,7 @@ export class Physics {
       this.R = R
       this.world = new R.World({ x: 0, y: T.physics.gravity, z: 0 })
       this.world.timestep = T.physics.step
-      if (this.scene) this.buildChips()
+      if (this.scene) this.buildDebris()
       for (const tile of this.waiting) this.addTile(tile)
       this.waiting.length = 0
       this.stats.bootMs = Math.round(performance.now() - t0)
@@ -79,7 +90,7 @@ export class Physics {
   // hang the debris mesh in. Whichever of the two finishes second builds the pool.
   setScene(scene) {
     this.scene = scene
-    if (this.world && !this.chips.length) this.buildChips()
+    if (this.world && !this.chips.length) this.buildDebris()
   }
 
   get ready() { return !!this.world }
@@ -167,42 +178,58 @@ export class Physics {
 
   // Every chip is made once and reused for the life of the page: a body, a collider sized to match, and one slot in
   // a single instanced mesh, so the whole pool costs one draw call however much of it is in the air.
-  buildChips() {
+  // One pool per material, because a shattered window and a cracked wall are not the same rubbish. Each pool is one
+  // instanced mesh — so the whole lot is four draw calls — with the shape baked into its geometry and the size
+  // carried per instance, which is why the scale stays uniform.
+  //
+  // Every collider has to stay thicker than `maxFall × step` in its smallest dimension or it falls through the
+  // ground (see `step()`), which is why the glass is chunks of pane rather than slivers: at this terminal velocity
+  // a body travels 18 cm between contact checks and a razor of glass would be through the road before it was asked.
+  buildDebris() {
     const C = T.physics.chips
-    // no `vertexColors`: the per-instance colour arrives through `instanceColor`, and turning vertexColors on as
-    // well would make the shader read a per-vertex colour attribute the box geometry does not have — which is not
-    // white, it is an unbound attribute, i.e. black
-    const mat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ roughness: 1 }), { __shared: true }))
-    this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, C.pool)
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-    this.mesh.frustumCulled = false                   // the pool is scattered; its rest bounds mean nothing
-    this.mesh.count = C.pool
     const colour = new THREE.Color()
-    for (let i = 0; i < C.pool; i++) {
-      const size = C.size * (0.7 + (i % 7) / 10)      // never much under maxFall / step, or it slips through (see step())
-      const body = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic()
-        .setTranslation(0, -1000, 0).setLinearDamping(T.physics.debris.linear).setAngularDamping(T.physics.debris.angular)
-        .setCanSleep(true).setCcdEnabled(true).setEnabled(false))   // small, fast and cheap: without it they slip through the ground
-      const col = this.world.createCollider(this.R.ColliderDesc.cuboid(size / 2, size / 2, size / 2)
-        .setDensity(T.physics.debris.density).setFriction(T.physics.debris.friction)
-        .setRestitution(T.physics.debris.bounce).setCollisionGroups(GROUP.debris), body)
-      this.chips.push({ body, col, size, live: false, born: 0, prev: null })
-      this.mesh.setMatrixAt(i, _m.makeScale(0, 0, 0))
-      this.mesh.setColorAt(i, colour.setHex(CHIP_COLOURS[i % CHIP_COLOURS.length]))
+    for (const [kind, d] of Object.entries(DEBRIS)) {
+      // no `vertexColors`: the per-instance colour arrives through `instanceColor`, and turning vertexColors on as
+      // well would make the shader read a per-vertex attribute the geometry does not have — which is not white, it
+      // is an unbound attribute, i.e. black
+      const mat = noOutline(Object.assign(new THREE.MeshStandardMaterial({ roughness: d.rough ?? 1, ...(d.mat ?? {}) }), { __shared: true }))
+      const n = Math.round(C.pool * d.share)
+      const mesh = new THREE.InstancedMesh(geometryFor(d), mat, n)
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      mesh.frustumCulled = false                      // the pool is scattered; its rest bounds mean nothing
+      mesh.count = n
+      mesh.renderOrder = d.mat?.transparent ? 3 : 0
+      const pool = { kind, mesh, chips: [], next: 0 }
+      for (let i = 0; i < n; i++) {
+        const size = C.size * d.size * (0.78 + (i % 7) / 16)
+        const half = [d.box[0], d.box[1], d.box[2]].map((k) => Math.max(C.minChip, size * k) / 2)
+        const body = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic()
+          .setTranslation(0, -1000, 0).setLinearDamping(T.physics.debris.linear).setAngularDamping(T.physics.debris.angular)
+          .setCanSleep(true).setCcdEnabled(true).setEnabled(false))   // small, fast and cheap: without it they slip through the ground
+        const col = this.world.createCollider(this.R.ColliderDesc.cuboid(half[0], half[1], half[2])
+          .setDensity(d.density ?? T.physics.debris.density).setFriction(T.physics.debris.friction)
+          .setRestitution(d.bounce ?? T.physics.debris.bounce).setCollisionGroups(GROUP.debris), body)
+        const chip = { body, col, size, pool, slot: i, live: false, born: 0, prev: null }
+        pool.chips.push(chip)
+        this.chips.push(chip)
+        mesh.setMatrixAt(i, _m.makeScale(0, 0, 0))
+        mesh.setColorAt(i, colour.setHex(d.colours[i % d.colours.length]).multiplyScalar(0.85 + (i % 5) / 12))
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.instanceColor.needsUpdate = true
+      this.scene.add(mesh)
+      this.pools.set(kind, pool)
     }
-    this.mesh.instanceMatrix.needsUpdate = true
-    this.mesh.instanceColor.needsUpdate = true
-    this.scene.add(this.mesh)
   }
 
-  // n chips thrown out of a point, the replacement for the hand-integrated boxes in game/Effects.js
-  burst(x, y, z, r, n) {
+  // n pieces of `kind` thrown out of a point: bricks off a wall, shards off a window, logs off a tree
+  burst(x, y, z, r, n, kind = "steen") {
     if (!this.world || !T.physics.on) return 0
     if (this.chunks && !this.chunks.ready(x, z)) return 0     // no ground under it yet: it would fall for ever
     const C = T.physics.chips
     let made = 0
     for (let k = 0; k < n; k++) {
-      const chip = this.take()
+      const chip = this.take(kind)
       if (!chip) break
       const a = (k / n + Math.random() / n) * Math.PI * 2, up = 0.4 + Math.random() * 0.9
       const spread = Math.max(r, C.size * 1.5)              // born apart: five boxes inside one metre shove each
@@ -219,17 +246,47 @@ export class Physics {
     return made
   }
 
+  // A tree coming down. The logs are laid out along the line the trunk falls on and given the speed that point of
+  // a trunk pivoting on its own stump would have — so they arrive in order, the top of the tree travelling fastest,
+  // and the whole thing reads as a trunk coming apart as it goes over rather than a pile appearing.
+  fell(x, y, z, height, radius, dx, dz) {
+    if (!this.world || !T.physics.on) return 0
+    if (this.chunks && !this.chunks.ready(x, z)) return 0
+    const len = Math.hypot(dx, dz) || 1
+    const ux = dx / len, uz = dz / len
+    const n = Math.max(2, Math.min(7, Math.round(height / 2.2)))
+    const spin = 2.2 + Math.random() * 0.8                    // rad/s the trunk is turning as it goes
+    let made = 0
+    for (let k = 0; k < n; k++) {
+      const chip = this.take("hout")
+      if (!chip) break
+      const up = (k + 0.5) / n * height                       // how far up the trunk this log was
+      const lean = Math.min(1, up / height) * 0.35            // already tipping as it comes apart
+      chip.body.setEnabled(true)
+      chip.body.setTranslation({ x: x + ux * up * lean, y: y + up * (1 - lean * 0.5), z: z + uz * up * lean }, true)
+      chip.body.setRotation(_q.setFromAxisAngle(_up, Math.atan2(ux, uz)), false)
+      chip.body.setLinvel({ x: ux * spin * up, y: 0.6, z: uz * spin * up }, true)
+      chip.body.setAngvel({ x: -uz * spin, y: (Math.random() - 0.5) * 1.5, z: ux * spin }, true)
+      chip.live = true
+      chip.born = performance.now()
+      chip.prev = null
+      made++
+    }
+    return made
+  }
+
   // a free slot, else the oldest one — and anything recycled in mid-air is set down on the ground first, because a
   // chip that stops being simulated while it is still falling is exactly the thing this module exists to prevent
-  take() {
-    const pool = this.chips
-    if (!pool.length) return null
-    for (let i = 0; i < pool.length; i++) {
-      const chip = pool[(this.next + i) % pool.length]
-      if (!chip.live) { this.next = (this.next + i + 1) % pool.length; return chip }
+  take(kind) {
+    const pool = this.pools.get(kind) ?? this.pools.get("steen")
+    const chips = pool?.chips
+    if (!chips?.length) return null
+    for (let i = 0; i < chips.length; i++) {
+      const chip = chips[(pool.next + i) % chips.length]
+      if (!chip.live) { pool.next = (pool.next + i + 1) % chips.length; return chip }
     }
-    let oldest = pool[0]
-    for (const chip of pool) if (chip.born < oldest.born) oldest = chip
+    let oldest = chips[0]
+    for (const chip of chips) if (chip.born < oldest.born) oldest = chip
     this.land(oldest)
     return oldest
   }
@@ -559,11 +616,11 @@ export class Physics {
   }
 
   draw() {
-    if (!this.mesh) return
+    if (!this.pools.size) return
     const a = this.alpha
     for (let i = 0; i < this.chips.length; i++) {
-      const chip = this.chips[i]
-      if (!chip.live) { this.mesh.setMatrixAt(i, _m.makeScale(0, 0, 0)); continue }
+      const chip = this.chips[i], mesh = chip.pool.mesh, i0 = chip.slot
+      if (!chip.live) { mesh.setMatrixAt(i0, _m.makeScale(0, 0, 0)); continue }
       const p = chip.body.translation(), r = chip.body.rotation(), q = chip.prev
       _v.set(p.x, p.y, p.z)
       _q.set(r.x, r.y, r.z, r.w)
@@ -571,9 +628,9 @@ export class Physics {
         _v.set(q[0] + (p.x - q[0]) * a, q[1] + (p.y - q[1]) * a, q[2] + (p.z - q[2]) * a)
         _q.copy(_q2.set(q[3], q[4], q[5], q[6])).slerp(_q2.set(r.x, r.y, r.z, r.w), a)
       }
-      this.mesh.setMatrixAt(i, _m.compose(_v, _q, _s.setScalar(chip.size)))
+      mesh.setMatrixAt(i0, _m.compose(_v, _q, _s.setScalar(chip.size)))
     }
-    this.mesh.instanceMatrix.needsUpdate = true
+    for (const pool of this.pools.values()) pool.mesh.instanceMatrix.needsUpdate = true
   }
 
   // everything goes: a new round, or the knob turned off
@@ -610,6 +667,17 @@ function simplify(ring, tol) {
     if (pts.length <= 8) return pts
   }
   return pts
+}
+
+// A pool's shape, baked in so the per-instance scale can stay one number. A log is a cylinder lying along its own
+// length; everything else is a box of the given proportions.
+function geometryFor(d) {
+  if (d.log) {
+    const g = new THREE.CylinderGeometry(d.box[1] / 2, d.box[1] / 2, d.box[0], 7)
+    g.rotateZ(Math.PI / 2)
+    return g
+  }
+  return new THREE.BoxGeometry(d.box[0], d.box[1], d.box[2])
 }
 
 function worldBox(obb) {

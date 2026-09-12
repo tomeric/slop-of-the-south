@@ -141,8 +141,11 @@ export const TUNING = {
     // exactly hover as the climb reaches `vMax` — flat thrust would be a rocket, not a jump. `drainScale` is the
     // share of the boost meter's drain rate, so a full meter is six seconds of flight rather than three.
     thrust: { ratio: 1.7, height: 18, damp: 0.8, vMax: 12, drainScale: 0.5, spread: 0.72 },
-    chips: { pool: 220, size: 0.5, speed: 7, life: 30 },   // pool: reload (the bodies are made once)
-    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5 },   // in the air at once, how many may let go per frame, and
+    // The debris pool, split between the materials the world is made of (game/Physics.js DEBRIS). `minChip` is
+    // the floor on a collider's smallest dimension: under `maxFall x step` it goes through the ground.
+    chips: { pool: 260, size: 0.5, speed: 7, life: 30, minChip: 0.22 },   // pool: reload (the bodies are made once)
+    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5, chips: 4, shards: 7 },   // chips off a broken
+                                              // panel, and the shards a pane goes into instead of toppling   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points
     // what holds what up (game/Support.js): weld is how far apart two pieces may be and still touch, slack how far
     // a supporter's top may overshoot, overhang how far a floor may hang past whatever is left under it

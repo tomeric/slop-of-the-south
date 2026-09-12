@@ -26,6 +26,17 @@ function doorColour(key) {
   return [_c.r, _c.g, _c.b]
 }
 
+// What a piece is made of: the material bucket most of its triangles went into. A wall panel is mostly brick, a
+// window's pane is glass, a door and a staircase are timber, a floor slab is concrete.
+function materialOf(piece) {
+  let best = null, most = 0
+  for (const r of piece.ranges ?? []) if (r.count > most) { most = r.count; best = r.name }
+  return best === "glas" ? "glas"
+    : best === "hout" ? "hout"
+    : best === "beton" || best === "pannen" || best === "bitumen" ? "beton"
+    : "steen"
+}
+
 export class Structures {
   constructor(scene, index, chunks, physics) {
     this.scene = scene
@@ -138,13 +149,44 @@ export class Structures {
 
   // A piece comes off — the car went through it, a rocket found it — and then everything it was holding up comes
   // down after it, a few a frame so a block reads as a collapse rather than a single frame of everything vanishing.
+  // A piece lets go. What happens next depends on what it is made of: a wall panel topples as the panel it is and
+  // sheds a few bricks off the break, but a pane of glass does not topple — it goes, all at once, into shards. That
+  // is the difference between a window breaking and a window falling over.
   break(entry, piece, vx = 0, vy = 0, vz = 0) {
     if (!entry.standing?.has(piece)) return 0
     entry.standing.delete(piece)
-    this.physics?.breakPiece(entry, piece, vx, vy, vz)
+    const mat = materialOf(piece)
+    const b = piece.box
+    const cx = b ? (b.min.x + b.max.x) / 2 : entry.obj.x
+    const cy = b ? (b.min.y + b.max.y) / 2 : entry.obj.y
+    const cz = b ? (b.min.z + b.max.z) / 2 : entry.obj.z
+    const size = b ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) : 1
+    // A window is not a piece of its own — the cell is the brick surround, the reveal and the pane together — so
+    // the glass is taken out of it by range rather than by piece. It shatters where it stood and the panel around
+    // it topples on without it, which is what breaking a window actually looks like.
+    const glass = (piece.ranges ?? []).find((r) => r.name === "glas" && r.count)
+    if (glass) {
+      this.hideRange(entry, glass)
+      this.physics?.burst(cx, cy, cz, size * 0.3, T.physics.pieces.shards, "glas")
+    }
+    if (mat === "glas") {
+      this.hide(entry, piece)                                   // nothing left worth toppling
+    } else {
+      this.physics?.breakPiece(entry, piece, vx, vy, vz)
+      const n = Math.min(T.physics.pieces.chips, Math.max(1, Math.round(size)))
+      this.physics?.burst(cx, cy, cz, size * 0.35, n, mat)
+    }
     this.falling.add(entry)
     this.onDamage?.(entry.obj, T.physics.pieces.damage * (entry.obj.max / Math.max(1, entry.pieces.length)))
     return 1
+  }
+
+  // take a piece out of the standing geometry without giving it a body of its own
+  hide(entry, piece) { for (const r of piece.ranges) this.hideRange(entry, r) }
+
+  hideRange(entry, r) {
+    const geo = entry.geos?.get(r.name)
+    if (geo) collapseRange(geo.attributes.position, r.start, r.count)
   }
 
   // whatever lost its support last frame, let go of it now
@@ -172,9 +214,7 @@ export class Structures {
     entry.dying = performance.now()
     for (const piece of [...entry.standing]) {
       entry.standing.delete(piece)
-      if (!this.physics?.breakPiece(entry, piece, (Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3)) {
-        for (const r of piece.ranges) { const geo = entry.geos?.get(r.name); if (geo) collapseRange(geo.attributes.position, r.start, r.count) }
-      }
+      if (!this.physics?.breakPiece(entry, piece, (Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3)) this.hide(entry, piece)
     }
     this.falling.delete(entry)
   }
