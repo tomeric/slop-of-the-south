@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { TUNING as T } from "game/Tuning"
 import { collapseRange } from "game/Destructibles"
 import { WINDOW } from "game/BuildingTextures"
+import { bayCount, storeyCount } from "game/BuildingMeshes"
 import { nearRoad } from "game/ChunkManager"
 import { noOutline } from "game/Outline"
 import { casts } from "game/Shadows"
@@ -128,7 +129,7 @@ function detailOf(obj, parts, groundAt) {
   const windows = obj.wall >= B.minHeight
   // the rows are laid out over the wall height BuildingMeshes used — the ridge, on a gabled house — but a sill may
   // only hang where there is wall under it, and along a footprint edge that is the eave
-  const storeys = Math.max(1, Math.round(obj.wall / B.storey)), storeyH = obj.wall / storeys
+  const storeys = obj.storeys ?? storeyCount(obj.wall), storeyH = obj.wall / storeys
   const eave = Math.min(obj.wall, obj.eave ?? obj.wall)
   const edges = []
   for (const ring of obj.rings) {
@@ -152,14 +153,14 @@ function detailOf(obj, parts, groundAt) {
   for (const e of edges)
     if (e.len >= 2 && (!door || e.len > door.len) &&
         nearRoad(obj.tile?.roadIndex, e.px + e.ux * e.len / 2 + e.nx * 3, e.pz + e.uz * e.len / 2 + e.nz * 3, DOOR.reach)) door = e
-  const bay = door && doorBay(door, T.buildings)
+  const bay = door && doorBay(door)
   for (const e of edges) {
     band(parts.stone, e, -PLINTH.drop, PLINTH.h, PLINTH.out, PLINTH.deep)
     band(parts.dark, e, e.eave - GUTTER.h, GUTTER.h, GUTTER.out, GUTTER.deep)
     if (windows && e.len >= B.minWidth) sills(parts.stone, e, e.eave, storeys, storeyH, B, e === door ? bay : -1)
   }
   if (door) {
-    const bays = Math.max(1, Math.round(door.len / B.bay)), c = (bay + 0.5) * (door.len / bays)
+    const bays = bayCount(door.len), c = (bay + 0.5) * (door.len / bays)
     doorway(parts.paint, door, obj, bay, groundAt(door.px + door.ux * c + door.nx * 1.5, door.pz + door.uz * c + door.nz * 1.5))
   }
 }
@@ -179,8 +180,8 @@ function eaveOver(obj, x, z, fallback) {
 }
 
 // the bay of the street-facing wall the door stands in: the middle one, so it lands between windows and not under one
-function doorBay(e, B) {
-  const bays = Math.max(1, Math.round(e.len / B.bay))
+function doorBay(e) {
+  const bays = bayCount(e.len)
   return Math.min(bays - 1, Math.floor(bays / 2))
 }
 
@@ -198,7 +199,7 @@ function band(out3, e, y0, h, out, deep) {
 // One sill under every window the facade paints on this wall: the bays BuildingMeshes snapped to, and the window's
 // own width and sill height out of the cell it is drawn in, scaled to this building's bay and storey.
 function sills(out3, e, ceiling, storeys, storeyH, B, skipBay = -1) {
-  const bays = Math.max(1, Math.round(e.len / B.bay)), bayW = e.len / bays
+  const bays = bayCount(e.len), bayW = e.len / bays
   const w = WINDOW.w / WINDOW.bay * bayW + SILL.over * 2
   const ox = e.nx * SILL.out, oz = e.nz * SILL.out
   for (let s = 0; s < storeys; s++) {
@@ -219,7 +220,7 @@ function sills(out3, e, ceiling, storeys, storeyH, B, skipBay = -1) {
 // The leaf stands on the ground rather than on the building's own foot: BAG puts that at the level the surveyor
 // measured, which is not always where the pavement ended up.
 function doorway(out3, e, obj, bay, ground) {
-  const bays = Math.max(1, Math.round(e.len / T.buildings.bay)), bayW = e.len / bays
+  const bays = bayCount(e.len), bayW = e.len / bays
   const w = Math.min(DOOR.w, bayW - 0.5, e.len - 0.4)
   // Stand it on the pavement, and never higher than the top of the plinth: BAG measures a building's foot where the
   // surveyor found it, which is up to a metre under the street, and a door hanging over its own doorstep is worse

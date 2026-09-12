@@ -43,7 +43,7 @@ Game space is RD minus a fixed origin so floats stay small:
 | Layer | Source | Notes |
 |---|---|---|
 | Roads, water, land use | OpenStreetMap via Overpass (MVP) or Geofabrik Limburg `.pbf` + `osm2pgsql` (full box) | `rake osm:fetch osm:import` |
-| Buildings | **3D BAG** (3dbag.nl, TU Delft, CC BY 4.0) | LoD2.2 surfaces: the real roof planes and walls per building (`building_meshes`, ~12 faces per house), triangulated on the client. LoD1.3 parts are imported too as a fallback for the few buildings without a LoD2.2 model. `rake bag3d:fetch bag3d:import` downloads the GeoPackage tiles and loads them with `ogr2ogr`. |
+| Buildings | **3D BAG** (3dbag.nl, TU Delft, CC BY 4.0) | LoD2.2 surfaces: the real roof planes and walls per building (`building_meshes`, ~12 faces per house), triangulated on the client. LoD1.3 parts are imported too as a fallback for the few buildings without a LoD2.2 model. `rake bag3d:fetch bag3d:import` downloads the GeoPackage tiles and loads them with `ogr2ogr`. The storey count BAG registered (`b3_bouwlagen`) rides along as `levels`, present for about half the buildings — the missing half are the sheds and garages nobody registered floors for, where the client's `round(wall height / 3)` was right anyway. |
 | Buildings (fallback) | OpenStreetMap footprints | Only used where no 3D BAG building overlaps, i.e. across the German border. `height` / `building:levels` tags, fallback 6 m. |
 | Place names | OpenStreetMap `place=*` nodes (towns, villages, wijken) | Drive the HUD street sign (nearest named road + nearest place) |
 | Land cover & water | **BGT** `begroeidterreindeel` (meadows, arable fields, orchards, woods, lawns), `onbegroeidterreindeel` (yards, pavement), `waterdeel`, `vegetatieobject` (hedges), plus the grass verges from `road_surfaces` | Painted per tile into a 512 px terrain texture (fields keep a stable colour per polygon, with a pattern clipped inside the bigger ones); water is also drawn as a draped skin. Each polygon carries its BGT sub-kind (`plus-fysiekVoorkomen`: gras, heesters, bosplantsoen, klinkers, asfalt …), which picks a finer pattern and lets shrub beds grow bushes. Polygons under 6 m² are dropped. Area shares classify each tile into a biome: water, stad, woonwijk, dorp, bos, boomgaarden, akkerland, weiland, platteland (`LandCover.biome`). Orchards get hoogstam fruit trees on a 9 m lattice. |
@@ -68,7 +68,8 @@ in the game's about screen.
                                             ├── heights[51×51]   (10 m spacing)
                                             ├── roads[]          {kind, width, pts}
                                             ├── buildings[]      {base, height, footprint}   (OSM / fallback boxes)
-                                            ├── meshes[]         {id, roof, o, f: [[label, ring…]…]} (3D BAG LoD2.2 faces, cm offsets)
+                                            ├── meshes[]         {id, roof, n, o, f: [[label, ring…]…]} (3D BAG LoD2.2 faces, cm
+                                            │                    offsets; n = storeys from BAG, absent where BAG does not say)
                                             ├── trees[]          [x, z, kind, height]   (BGT; kind 0 street tree, 1 broadleaf wood, 2 conifer, 3 fruit tree)
                                             ├── cover[]          [code, ring…]          (BGT land cover, dm offsets from the tile corner; painted)
                                             │                    water: [30, level | null, ring…] — level = flat surface over a carved bed
@@ -262,6 +263,7 @@ bin/rails osm:pbf_fetch        # Geofabrik limburg-latest.osm.pbf (100 MB)
 bin/rails osm:pbf_import       # → roads (101k) and places (1k) via ogr2ogr
 bin/rails bag3d:fetch          # 3D BAG GeoPackage tiles for the box → data/bag3d/tiles (1075 tiles, ~2.5 GB gz / 13 GB)
 bin/rails bag3d:import         # → PostGIS buildings (LoD1.3 parts) and building_meshes (LoD2.2)
+bin/rails bag3d:levels         # backfill just building_meshes.levels from the tiles already downloaded (minutes, not an hour)
 bin/rails bgt:bulk_fetch       # BGT extracts per municipality via PDOK's download API → data/bgt/bulk/*.zip (~5 GB)
 bin/rails bgt:bulk_import      # → land_covers (terrain, pavement, water, hedges) and the registered trees; SKIP_TREE_FILL=1 leaves the woods alone
 bin/rails bgt:tree_fill        # → scatter trees through the woods and orchards already in land_covers (ONLY=woods,orchards)

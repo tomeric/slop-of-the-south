@@ -119,8 +119,9 @@ namespace :bag3d do
     SQL
     # 3. LoD2.2 surfaces (roof planes + walls) per building; labels "(n:0,2,2,1)" → int[] with 0 ground, 1 roof, 2 wall
     m = conn.exec_update(<<~'SQL')   # single-quoted heredoc: keeps the regex backslashes
-      INSERT INTO building_meshes (bag_id, roof_type, ground_height, labels, center, geom, created_at, updated_at)
+      INSERT INTO building_meshes (bag_id, roof_type, ground_height, levels, labels, center, geom, created_at, updated_at)
       SELECT DISTINCT ON (s.identificatie) s.identificatie, p.b3_dak_type, p.b3_h_maaiveld,
+             NULLIF(round(p.b3_bouwlagen), 0)::int,
              string_to_array(regexp_replace(s.labels, '^\(\d+:|\)$', '', 'g'), ',')::int[],
              ST_Centroid(ST_Force2D(s.geom)), s.geom, now(), now()
       FROM bag3d_lod22_3d s
@@ -128,10 +129,34 @@ namespace :bag3d do
       WHERE ST_NumGeometries(s.geom) > 0
       ORDER BY s.identificatie
       ON CONFLICT (bag_id) DO UPDATE SET roof_type = EXCLUDED.roof_type, ground_height = EXCLUDED.ground_height,
-        labels = EXCLUDED.labels, center = EXCLUDED.center, geom = EXCLUDED.geom, updated_at = now()
+        levels = EXCLUDED.levels, labels = EXCLUDED.labels, center = EXCLUDED.center, geom = EXCLUDED.geom,
+        updated_at = now()
     SQL
     conn.execute("DROP TABLE bag3d_lod13_2d, bag3d_pand, bag3d_lod22_3d")
     puts "Upserted #{n} LoD1.3 parts and #{m} LoD2.2 meshes from #{files.size} tiles; buildings now: bag3d=#{Building.where(source: 'bag3d').count} osm=#{Building.where(source: 'osm').count}, meshes=#{BuildingMesh.count}"
+  end
+
+  # Backfill one pand attribute onto meshes that are already imported. `import` would do it too, but it re-reads
+  # 13 GB of LoD2.2 geometry to rewrite one integer; the pand layer is attributes only, so this is minutes.
+  desc "Backfill building_meshes.levels (b3_bouwlagen) from the downloaded tiles, without touching the geometry"
+  task levels: :environment do
+    conn = ActiveRecord::Base.connection
+    pg = BAG3D_PG.call
+    files = Dir[BAG3D_TILES.join("*.gpkg").to_s].sort
+    raise "no tiles in #{BAG3D_TILES}; run bin/rails bag3d:fetch first" if files.empty?
+    files.each_with_index do |file, i|
+      print "\r#{i + 1}/#{files.size} #{File.basename(file)}   "
+      sh "ogr2ogr", "-q", "-f", "PostgreSQL", pg, file, (i.zero? ? "-overwrite" : "-append"), "-nln", "bag3d_pand",
+         "-nlt", "NONE", "-sql", "SELECT identificatie, b3_bouwlagen FROM pand", verbose: false
+    end
+    puts
+    n = conn.exec_update(<<~SQL)
+      UPDATE building_meshes m SET levels = NULLIF(round(p.b3_bouwlagen), 0)::int, updated_at = now()
+      FROM bag3d_pand p WHERE p.identificatie = m.bag_id
+        AND m.levels IS DISTINCT FROM NULLIF(round(p.b3_bouwlagen), 0)::int
+    SQL
+    conn.execute("DROP TABLE bag3d_pand")
+    puts "Set levels on #{n} of #{BuildingMesh.count} meshes; #{BuildingMesh.where(levels: nil).count} still without one"
   end
 
   desc "Delete downloaded 3D BAG tiles and index"

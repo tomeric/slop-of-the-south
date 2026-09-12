@@ -2,6 +2,8 @@
 # into the JSON the Three.js client consumes.
 # All coordinates are converted to game units (x east, z south, y up).
 class TileBuilder
+  MAX_LEVELS = 12        # BAG has a handful of "43 storey" silos and chimneys; nothing real here is taller
+
   def initialize(heights: Geo::HeightGrid.current)
     @heights = heights
   end
@@ -98,7 +100,10 @@ class TileBuilder
         [ labels[i] || BuildingMesh::LABEL_WALL, *rings.map { |ring| ring_offsets(ring, ox, oy, oz, dz) } ]
       end
       next if faces.empty?
+      # n: the storeys BAG counted (b3_bouwlagen). The client falls back to round(wall height / 3) without it, which
+      # is what every tile built before this held; clamped here so a silo does not claim forty floors.
       { id: m["bag_id"].split(".").last, roof: m["roof_type"], o: [ ox, oy, oz ], f: faces,
+        n: m["levels"]&.clamp(1, MAX_LEVELS),
         fp: (ground_rings.map { ring_xz(_1) } if ground_rings.any?) }.compact
     end
   end

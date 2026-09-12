@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_11_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_12_060000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -32,6 +32,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_200000) do
     t.geometry "geom", limit: {srid: 28992, type: "multi_polygon", has_z: true}, null: false
     t.float "ground_height"
     t.integer "labels", default: [], null: false, array: true
+    t.integer "levels"
     t.string "roof_type"
     t.datetime "updated_at", null: false
     t.index ["bag_id"], name: "index_building_meshes_on_bag_id", unique: true

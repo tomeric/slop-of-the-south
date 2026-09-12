@@ -24,6 +24,13 @@ const FLAT = [0x8f8c86, 0x9d9a93, 0x7e7c78]                                     
 const POOL3 = [], POOL2 = []                                                                      // scratch vectors reused per face
 const X_AXIS = new THREE.Vector3(1, 0, 0)
 
+// The grid every consumer has to agree on: the facade texture paints one window per bay per storey, game/Facades.js
+// hangs a sill under each of them, and the structure generator punches the hole. Derive it in one place or the three
+// drift and a sill ends up under a brick pier. `n` is what BAG counted (tile field `n`, b3_bouwlagen); without it we
+// fall back to the wall height, which is what every tile built before that field existed carries.
+export const bayCount = (width) => Math.max(1, Math.round(width / T.buildings.bay))
+export const storeyCount = (wallH, n) => (n > 0 ? n : Math.max(1, Math.round(wallH / T.buildings.storey)))
+
 export function buildBuildingMeshes(meshes, reg) {
   if (!meshes?.length) return null
   const buckets = new Map()                                     // material name → { pos, col, uv }
@@ -65,7 +72,7 @@ export function buildBuildingMeshes(meshes, reg) {
     }
     const wallH = wallTop > -Infinity ? wallTop / 100 : 0
     const eaveH = eaveTop < Infinity ? eaveTop / 100 : wallH
-    const storeys = Math.max(1, Math.round(wallH / B.storey))
+    const storeys = storeyCount(wallH, b.n)
     const storeyH = wallH / storeys
     const windows = wallH >= B.minHeight
     const lights = (h >> 7) % 3 !== 0                            // two houses in three have their lights on at night
@@ -116,7 +123,7 @@ export function buildBuildingMeshes(meshes, reg) {
       const name = label === 1 ? (flat ? "bitumen" : "pannen") : gevel ? (lights ? "gevel" : "gevel-uit") : "steen"
       const part = bucket(name)
       // the facade is measured in bays and storeys, everything else in metres (its map repeats by the metre)
-      const su = gevel ? 1 / (width / Math.max(1, Math.round(width / B.bay))) : 1
+      const su = gevel ? 1 / (width / bayCount(width)) : 1
       const sv = gevel ? 1 / storeyH : 1
       const base = label === 2 ? oy : v0                        // walls start at the building's foot, roofs at the eave
 
@@ -138,7 +145,7 @@ export function buildBuildingMeshes(meshes, reg) {
       for (const [name, p] of buckets) { const start = at[name] ?? 0, count = p.pos.length / 3 - start; if (count) parts.push({ name, start, count }) }
       if (parts.length) {
         const rings = b.fp ?? [hullXZ(xz)]
-        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, h: top - oy, max: buildingHp(rings), parts })
+        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, storeys, h: top - oy, max: buildingHp(rings), parts })
       }
     }
   }
