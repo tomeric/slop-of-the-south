@@ -40,10 +40,10 @@ const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 // drawn piece sits proud of the ground.
 const DEBRIS = {
   steen: { box: [1, 0.6, 0.55], size: 1.0, share: 0.4, colours: [0x9a5f4a, 0xa8705a, 0x8d5442, 0xb08a72, 0x7d6b5e] },
-  glas:  { box: [1, 0.42, 0.85], size: 1.15, share: 0.2, colours: [0xcfe6f2, 0xbcd8e8, 0xe2f1f8], rough: 0.06,
-           density: 700, bounce: 0.25, mat: { transparent: true, opacity: 0.82, metalness: 0.35,
+  glas:  { box: [1.15, 0.42, 0.7], size: 1.2, share: 0.2, shard: true, colours: [0xcfe6f2, 0xbcd8e8, 0xe2f1f8],
+           rough: 0.06, density: 700, bounce: 0.25, mat: { transparent: true, opacity: 0.82, metalness: 0.35,
            emissive: 0x6d8fa3, emissiveIntensity: 0.35 } },   // it has to read against a grey road, so it is bright
-  hout:  { box: [1, 0.45, 0.45], size: 1.25, share: 0.2, log: true, colours: [0x6b4b2e, 0x7d5a38, 0x5a3f27, 0x8a6b45] },
+  hout:  { box: [1, 0.74, 0.74], size: 1.3, share: 0.2, log: true, colours: [0x6b4b2e, 0x7d5a38, 0x5a3f27, 0x8a6b45] },
   beton: { box: [1, 0.4, 0.85], size: 1.1, share: 0.2, colours: [0x8d8a84, 0x7a7670, 0x9c988f, 0x6e5a52, 0x8a4f3c] },
 }
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4()
@@ -727,9 +727,19 @@ function simplify(ring, tol) {
 // A pool's shape, baked in so the per-instance scale can stay one number. A log is a cylinder lying along its own
 // length; everything else is a box of the given proportions.
 function geometryFor(d) {
-  if (d.log) {
-    const g = new THREE.CylinderGeometry(d.box[1] / 2, d.box[1] / 2, d.box[0], 7)
+  if (d.log) {                                        // a length of trunk: thick, and round enough to roll
+    const g = new THREE.CylinderGeometry(d.box[1] / 2, d.box[1] / 2, d.box[0], 12)
     g.rotateZ(Math.PI / 2)
+    return g
+  }
+  if (d.shard) {
+    // A triangular plate with a point on it. A three-sided prism is a triangle already; turning it a sixth of a
+    // turn puts a corner on +x and the flat of the other two behind it, and stretching that axis makes the corner
+    // into a spike — which is what a pane of glass actually breaks into.
+    const g = new THREE.CylinderGeometry(0.5, 0.5, d.box[1], 3)
+    g.rotateX(Math.PI / 2)                            // lay it flat: thickness along z, triangle in the xy plane
+    g.rotateZ(-Math.PI / 6)
+    g.scale(d.box[0], d.box[2], 1)
     return g
   }
   return new THREE.BoxGeometry(d.box[0], d.box[1], d.box[2])

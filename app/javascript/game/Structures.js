@@ -37,6 +37,8 @@ function materialOf(piece) {
     : "steen"
 }
 
+const PANE_VERTS = 12                                 // one pane of glass: two faces, two triangles each
+
 export class Structures {
   constructor(scene, index, chunks, physics) {
     this.scene = scene
@@ -173,8 +175,11 @@ export class Structures {
       // was not breaking at all. The face normal is the way out.
       const n = piece.obb?.basis?.n
       const k = T.buildings.structure.thick + 0.35
+      // a lump of masonry can carry several windows, and its glass is one range across the lot of them, so the
+      // shards follow how much glass there actually was: PANE_VERTS is one pane, two faces of two triangles
+      const panes = Math.max(1, Math.round(glass.count / PANE_VERTS))
       this.physics?.burst(cx + (n?.x ?? 0) * k, cy + (n?.y ?? 0) * k, cz + (n?.z ?? 0) * k,
-                          size * 0.3, T.physics.pieces.shards, "glas")
+                          size * 0.3, Math.min(T.physics.pieces.maxShards, T.physics.pieces.shards * panes), "glas")
     }
     if (mat === "glas") {
       this.hide(entry, piece)                                   // nothing left worth toppling

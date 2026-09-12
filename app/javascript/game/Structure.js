@@ -185,12 +185,15 @@ export function buildStructure(obj, emit) {
       }
     }
     const rim = outline(cells.flatMap((c) => (c.opening ? holeParts(c) : c.parts)))
-    for (const c of cells) {
-      const piece = { kind: "wall", face: fi, bay: c.bay, storey: c.s, ranges: [] }
-      const mine = rim.filter(([x1, y1, x2, y2]) => inCell(c, (x1 + x2) / 2, (y1 + y2) / 2))
+    for (const group of clump(cells, obj.key, fi, S)) {
+      const c0 = group[0]
+      const piece = { kind: "wall", face: fi, bay: c0.bay, storey: c0.s, ranges: [] }
       emit.begin(piece)
-      if (c.opening) panelWithHole(emit, basis, d, c, mine, S)
-      else slab(emit, basis, c.parts, mine, d, S.thick, { skin: "steen", core: "pleister" })
+      for (const c of group) {
+        const mine = rim.filter(([x1, y1, x2, y2]) => inCell(c, (x1 + x2) / 2, (y1 + y2) / 2))
+        if (c.opening) panelWithHole(emit, basis, d, c, mine, S)
+        else slab(emit, basis, c.parts, mine, d, S.thick, { skin: "steen", core: "pleister" })
+      }
       emit.end(piece)
       pieces.push(piece)
     }
@@ -416,6 +419,44 @@ function holeParts(c) {
           [o.u0, c.cv0, o.u1, o.v0], [o.u0, o.v1, o.u1, c.top]]
     .filter(([a, b, e, f]) => e - a > EPS && f - b > EPS)
     .map(([a, b, e, f]) => [a, b, e, b, e, f, a, f])
+}
+
+// Masonry does not come apart on the grid it was drawn on. The bay-and-storey cells are what the windows need, but
+// a wall that breaks into them topples as a stack of neat rectangles; real brickwork comes away in lumps that
+// straddle two bays and a floor. So the cells are clumped first: start anywhere, keep taking a random unclaimed
+// neighbour until the lump is big enough, and what falls out are the tetrominoes — Ls, Ss, Ts, squares and bars.
+// Seeded on the building and the face, so the same wall always breaks the same way.
+//
+// The door keeps to itself; it is a door. And the collider a lump gets is its bounding box, so an L fills its own
+// notch — which nobody can see once it is tumbling, and which saves a convex decomposition per piece.
+function clump(cells, key, fi, S) {
+  const at = new Map(cells.map((c) => [`${c.bay},${c.s}`, c]))
+  const taken = new Set()
+  const rnd = mulberry32(hash32(`${key}:klont:${fi}`))
+  const out = []
+  for (const c of cells) {
+    const k0 = `${c.bay},${c.s}`
+    if (taken.has(k0)) continue
+    taken.add(k0)
+    const group = [c]
+    const want = c.door ? 1 : S.clump[Math.floor(rnd() * S.clump.length)]
+    while (group.length < want) {
+      const edge = []
+      for (const g of group) {
+        for (const [db, ds] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nk = `${g.bay + db},${g.s + ds}`
+          const n = at.get(nk)
+          if (n && !taken.has(nk) && !n.door) edge.push([nk, n])
+        }
+      }
+      if (!edge.length) break
+      const [nk, n] = edge[Math.floor(rnd() * edge.length)]
+      taken.add(nk)
+      group.push(n)
+    }
+    out.push(group)
+  }
+  return out
 }
 
 const inCell = (c, u, v) => u > c.cu0 - EPS && u < c.cu1 + EPS && v > c.cv0 - EPS && v < c.top + EPS

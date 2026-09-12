@@ -414,6 +414,20 @@ night. It costs one uniform and no CPU at all. The glass in front of it had to b
 to be visible — an opaque pane hides the room completely, which is how a headlight appeared to switch a house's
 lights off: the pane it was lighting went blue-grey and the lit room behind it was never drawn at all.
 
+**What it breaks into.** Masonry does not come apart on the grid it was drawn on. The bay-and-storey cells are what
+the windows need, but a wall that breaks into them topples as a stack of neat rectangles, and real brickwork comes
+away in lumps that straddle two bays and a floor. So the cells are clumped before they become pieces: start
+anywhere, keep taking a random unclaimed neighbour until the lump is big enough, and out fall the tetrominoes — Ls,
+Ss, Ts, squares and bars, seeded on the building and the face so the same wall always breaks the same way. Over
+twelve houses that is 416 lumps, 135 of them straddling two bays and 238 two storeys. The door keeps to itself; it
+is a door. A lump's collider is its bounding box, so an L fills its own notch — invisible once it is tumbling, and
+it saves a convex decomposition per piece. The support graph is unbothered: knock out a ground floor and half the
+house still comes down with nothing left floating.
+
+Logs are thick and round rather than pencil-thin, shards of glass are triangular plates with a real point on them
+(a three-sided prism turned a sixth of a turn and stretched), and a lump that carries three windows sheds three
+windows' worth of glass.
+
 **Clearing it.** What the front of a vehicle does to loose rubbish is a different job from what it does to walls,
 and it runs on `spec.clear`, the same coefficient the rubble heaps use — which spans 0.4 to 50, so a trike nudges a
 brick and a bulldozer clears the street. The dozer alone *carts off* what goes under its blade rather than pushing

@@ -110,6 +110,9 @@ export const TUNING = {
       floorThick: 0.22, slabs: 6,        // slabs: roughly how many pieces one floor is cut into
       partThick: 0.1, partStep: 2.5, doorWide: 1.0,
       doorHigh: 2.1, doorReach: 22,      // the front door, on the widest wall with a street this close in front of it
+      // how many bay-by-storey cells one lump of masonry is, drawn from at random: mostly threes and fours, so
+      // a wall comes apart in tetrominoes rather than in neat rectangles (reload)
+      clump: [1, 2, 2, 3, 3, 3, 4, 4, 4],
       stairs: true, stairWide: 1.0, stairLong: 3.2,
       roomBack: 0.45, roomOver: 0.12,    // how far inside the wall the lit room panel sits, and how far it oversails
     },
@@ -146,7 +149,7 @@ export const TUNING = {
     // The debris pool, split between the materials the world is made of (game/Physics.js DEBRIS). `minChip` is
     // the floor on a collider's smallest dimension: under `maxFall x step` it goes through the ground.
     chips: { pool: 260, size: 0.5, speed: 7, life: 30, minChip: 0.22 },   // pool: reload (the bodies are made once)
-    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5, chips: 4, shards: 7, shatter: 9 },   // chips off a broken
+    pieces: { max: 160, perFrame: 24, damage: 1.4, settle: 2.5, chips: 4, shards: 6, maxShards: 16, shatter: 9 },   // chips off a broken
                                               // panel, and the shards a pane goes into instead of toppling   // in the air at once, how many may let go per frame, and
                                               // how hard breaking one counts against the building's own hit points
     // what holds what up (game/Support.js): weld is how far apart two pieces may be and still touch, slack how far
