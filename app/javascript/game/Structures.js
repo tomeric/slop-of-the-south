@@ -16,6 +16,16 @@ import { collapseRange } from "game/Destructibles"
 // The work is spread the way every other streamer in this game spreads it — a few buildings a frame, nearest first,
 // under a millisecond budget — because converting a house is a couple of milliseconds and a city centre holds a
 // hundred of them inside eighty metres.
+// the paint on a front door, from the building's own id so it does not change when it is rebuilt
+const DOORS = [0x2f4a35, 0x6b2a24, 0x2b3a52, 0x4a3626, 0x7a6a4a]
+const _c = new THREE.Color()
+function doorColour(key) {
+  let h = 2166136261
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619)
+  _c.setHex(DOORS[(h >>> 0) % DOORS.length])
+  return [_c.r, _c.g, _c.b]
+}
+
 export class Structures {
   constructor(scene, index, chunks, physics) {
     this.scene = scene
@@ -64,6 +74,7 @@ export class Structures {
     const emit = collector({
       wall: [wall.r, wall.g, wall.b], steen: [wall.r, wall.g, wall.b],
       pleister: [1, 1, 1], beton: [1, 1, 1], glas: [1, 1, 1], pannen: [1, 1, 1], bitumen: [1, 1, 1],
+      hout: doorColour(obj.key),
     })
     const pieces = buildStructure(obj, emit)
     if (!pieces.length) { this.built.set(obj.key, { obj, group: null, pieces }); return }

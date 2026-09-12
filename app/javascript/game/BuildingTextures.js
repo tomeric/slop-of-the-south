@@ -135,6 +135,14 @@ const DRAW = {
     speckle(ctx, size, 205, 14, 2200, 4, rnd)
     grain(ctx, size, 200, 22, 900, 9, rnd, 0.25)
   },
+  // a front door: boards, and a panel line across it
+  hout: () => (ctx, size) => {
+    const rnd = rng(28)
+    speckle(ctx, size, 120, 26, 1800, 5, rnd)
+    ctx.fillStyle = "rgba(0,0,0,.22)"
+    for (let x = 0; x < size; x += size / 4) ctx.fillRect(x, 0, 2, size)
+    ctx.fillRect(0, size * 0.42, size, 3)
+  },
   // a bare floor slab, seen from above once the roof is off
   beton: () => (ctx, size) => {
     const rnd = rng(27)
@@ -143,11 +151,11 @@ const DRAW = {
   },
 }
 
-const METRES = { steen: 2.4, pannen: 2.0, bitumen: 3.0, pleister: 2.0, beton: 2.5 }
+const METRES = { steen: 2.4, pannen: 2.0, bitumen: 3.0, pleister: 2.0, beton: 2.5, hout: 1.0 }
 
 // ---- materials ------------------------------------------------------------------------------------------------
 
-const STRUCTURE = new Set([ "pleister", "beton" ])     // built by game/Structure.js, and wound correctly
+const STRUCTURE = new Set([ "pleister", "beton", "hout" ])     // built by game/Structure.js, and wound correctly
 const materials = new Map()
 const lit = []                                        // the facade materials, dimmed and lit by setBuildingsNight
 

@@ -3,6 +3,7 @@ import { TUNING as T } from "game/Tuning"
 import { WINDOW } from "game/BuildingTextures"
 import { bayCount, storeyCount } from "game/BuildingMeshes"
 import { hash32, mulberry32 } from "game/Tuning"
+import { nearRoad } from "game/ChunkManager"
 
 // A house, built rather than painted. `BuildingMeshes.js` takes the 3D BAG faces and draws them as a shell with
 // windows in the texture; this takes the same faces and makes a stack of pieces out of them — panels with real
@@ -120,6 +121,7 @@ export function buildStructure(obj, emit) {
   const storeyH = wallH / storeys
   const windows = wallH >= T.buildings.minHeight
 
+  const front = frontFace(src, obj, S)
   for (let fi = 0; fi < src.lab.length; fi++) {
     if (src.lab[fi] === 1) { roofFace(src, fi, obj, emit, pieces, S); continue }
     if (src.lab[fi] !== 2) continue
@@ -172,8 +174,10 @@ export function buildStructure(obj, emit) {
         if (area < S.minArea) continue
         const top = Math.min(cv1, v1)
         const full = Math.abs(area - bayW * (top - cv0)) < 0.05 && cv1 <= v1 + EPS
-        const opening = full && gevel && s < storeys ? windowRect(cu0, cv0, bayW, storeyH) : null
-        cells.push({ bay, s, cu0, cu1, cv0, top, parts, opening })
+        const doorway = fi === front && s === 0 && bay === Math.floor(bays / 2) && full && storeyH > 2.4
+        const opening = doorway ? doorRect(cu0, cv0, bayW, S)
+          : full && gevel && s < storeys ? windowRect(cu0, cv0, bayW, storeyH) : null
+        cells.push({ bay, s, cu0, cu1, cv0, top, parts, opening, door: doorway })
       }
     }
     const rim = outline(cells.flatMap((c) => (c.opening ? holeParts(c) : c.parts)))
@@ -359,6 +363,41 @@ function roofFace(src, fi, obj, emit, pieces, S) {
   }
 }
 
+// The wall that faces a street, so the front door goes on the front. Same test game/Facades.js uses for its own
+// door, but per wall face rather than per footprint edge, which is what the openings are cut from.
+function frontFace(src, obj, S) {
+  const index = obj.tile?.roadIndex
+  if (!index) return -1
+  const [ox, oy, oz] = src.o
+  let best = -1, wide = 0
+  for (let fi = 0; fi < src.lab.length; fi++) {
+    if (src.lab[fi] !== 2) continue
+    const a0 = src.off[fi], a1 = src.off[fi + 1]
+    if (a1 - a0 < 3) continue
+    const pts = []
+    for (let k = a0; k < a1; k++) pts.push(ox + src.xyz[k * 3] / 100, oy + src.xyz[k * 3 + 1] / 100, oz + src.xyz[k * 3 + 2] / 100)
+    if (!normalOf(pts, _n) || Math.abs(_n.y) > S.tilt) continue
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (let i = 0; i < pts.length; i += 3) {
+      x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i])
+      z0 = Math.min(z0, pts[i + 2]); z1 = Math.max(z1, pts[i + 2])
+    }
+    const w = Math.hypot(x1 - x0, z1 - z0)
+    if (w < wide || w < 2) continue
+    const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2
+    const out = _n.x * (mx - obj.x) + _n.z * (mz - obj.z) < 0 ? -1 : 1
+    if (!nearRoad(index, mx + _n.x * out * 3, mz + _n.z * out * 3, S.doorReach)) continue
+    wide = w; best = fi
+  }
+  return best
+}
+
+// a doorway: the same bay as a window would have, but down to the floor and only as wide as a door
+function doorRect(u0, v0, bayW, S) {
+  const w = Math.min(S.doorWide, bayW - 0.6)
+  return { u0: u0 + (bayW - w) / 2, u1: u0 + (bayW + w) / 2, v0: v0 + 0.02, v1: v0 + 0.02 + S.doorHigh }
+}
+
 // where the facade texture paints its glass, in metres, scaled to this building's bay and storey
 function windowRect(u0, v0, bayW, storeyH) {
   const w = WINDOW.w / WINDOW.bay * bayW, h = WINDOW.h / WINDOW.storey * storeyH
@@ -384,9 +423,10 @@ function panelWithHole(emit, basis, d, c, rim, S) {
   // the reveal: the four faces of the hole, facing inwards
   const rv = [[o.u0, o.v0, o.u1, o.v0], [o.u1, o.v0, o.u1, o.v1], [o.u1, o.v1, o.u0, o.v1], [o.u0, o.v1, o.u0, o.v0]]
   for (const [x1, y1, x2, y2] of rv) emit.quad("pleister", basis, [x2, y2, d], [x1, y1, d], [x1, y1, d - S.thick], [x2, y2, d - S.thick])
-  const glass = [o.u0, o.v0, o.u1, o.v0, o.u1, o.v1, o.u0, o.v1]
-  fan(emit, "glas", basis, glass, d - S.reveal, 1)
-  fan(emit, "glas", basis, glass, d - S.reveal, -1)
+  const pane = [o.u0, o.v0, o.u1, o.v0, o.u1, o.v1, o.u0, o.v1]
+  const mat = c.door ? "hout" : "glas"                             // a leaf, or the glass, set back in the reveal
+  fan(emit, mat, basis, pane, d - S.reveal, 1)
+  fan(emit, mat, basis, pane, d - S.reveal, -1)
 }
 
 // a flat [u, v, …] ring → flat convex triangles, through the same earcut the shell uses

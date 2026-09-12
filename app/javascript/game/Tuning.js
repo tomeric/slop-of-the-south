@@ -98,6 +98,7 @@ export const TUNING = {
       interior: true,         // floors, partitions, doorways and stairs (reload: they are baked into the pieces)
       floorThick: 0.22, slabs: 6,        // slabs: roughly how many pieces one floor is cut into
       partThick: 0.1, partStep: 2.5, doorWide: 1.0,
+      doorHigh: 2.1, doorReach: 22,      // the front door, on the widest wall with a street this close in front of it
       stairs: true, stairWide: 1.0, stairLong: 3.2,
     },
   },

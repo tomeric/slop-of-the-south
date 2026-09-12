@@ -354,6 +354,9 @@ thickness, a floor slab per storey, partition walls with doorways, a flight of s
 Its shell's vertices are copied out and collapsed, the pieces go up in their place, and driving away puts the shell
 back; a few buildings are converted per frame, nearest first, under a millisecond budget.
 
+One bay of the widest wall with a street in front of it gets a door instead of a window — the same test
+`Facades.js` uses, but per wall face rather than per footprint edge, because that is what the openings are cut from.
+
 The grid is the shell's grid, which is the whole trick: bays from `bayCount`, storeys from `storeyCount` (BAG's own
 count where it has one), and the opening punched at exactly the rectangle the facade texture paints its glass into,
 so the swap does not move a window. Every cell of that grid is cut out by clipping the face's *triangles* against it
