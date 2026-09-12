@@ -125,7 +125,8 @@ export const TUNING = {
     floorDrop: 4,                             // this far under the ground = the tile went out from under it; recycle
     warpJump: 12,                             // the car moving further than this in one frame is a teleport, not driving
     debris: { density: 900, friction: 0.9, bounce: 0.05, linear: 0.05, angular: 0.4, maxFall: 11,
-              sweepAhead: 1.4, sweepPush: 12, sweepHigh: 2.5, bladeExtra: 0.9 },   // what the front of a vehicle does
+              sweepAhead: 1.4, sweepPush: 12, sweepHigh: 2.5, bladeExtra: 1.3,
+              sweepLift: 0.4, sweepSteps: 6 },   // the swath is swept from where the blade was to where it is   // what the front of a vehicle does
               // to loose rubbish, and how much of the blade's swath a bulldozer carts away rather than shoves   // maxFall x step must stay well under the smallest chip
     // The second tier of solid: a shell of slabs, one per footprint edge, on every intact building inside `radius`
     // that is not built out of pieces — the overflow past `maxBuildings`, whatever is still queued, and the OSM

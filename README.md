@@ -430,9 +430,18 @@ windows' worth of glass.
 
 **Clearing it.** What the front of a vehicle does to loose rubbish is a different job from what it does to walls,
 and it runs on `spec.clear`, the same coefficient the rubble heaps use — which spans 0.4 to 50, so a trike nudges a
-brick and a bulldozer clears the street. The dozer alone *carts off* what goes under its blade rather than pushing
-an ever-growing pile in front of it, and only with the blade down. Measured on a settled pile of 22 bricks, one
-straight pass: trike 0, monster truck 0, bulldozer with the blade up 0, bulldozer with it down 10.
+brick and a bulldozer clears the street. The dozer destroys everything under its blade rather than pushing a pile
+along in front of it, and only with the blade down. The swath is its real plate width and is swept from where the
+blade *was* to where it is, in steps no longer than its own width, so nothing is stepped over between frames.
+Measured by driving through a 48-piece spill: **nothing at all is left lying inside the swath it drove through**;
+what survives is what the blade never touched, because a scattered burst spreads over sixteen metres and the blade
+is six. Blade up clears nothing, and so does everything that is not a bulldozer.
+
+**Tricks run on the meter.** Every vehicle's trick is paid for out of the same nitro the boost and the thrusters
+spend, so what limits you is fuel rather than a stopwatch. What is left of the stopwatch is `refire`, there only to
+stop a held key firing once a frame. Hold E on the trike and the rockets keep coming — ten to a full meter, a tenth
+of a second apart — and the bar under the speedometer reads empty when you cannot afford the next one, because
+that, not the timer, is what is stopping you.
 
 **Rubbish in the road.** Debris that comes to rest on the parade route is something the float has to get past.
 Each client reports where its own pieces settled — only ahead of the float, only inside the corridor it needs, and

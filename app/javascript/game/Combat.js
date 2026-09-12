@@ -113,9 +113,14 @@ export class Combat {
   // to walls. `clear` is the same coefficient the rubble heaps use and spans 0.4 to 50, so a trike nudges a brick
   // and a bulldozer clears the street — and the dozer, alone, carts off what goes under the blade instead of
   // pushing an ever-growing pile in front of it.
+  // What the front of the vehicle does to the rubbish lying in the road, which is a different job from what it does
+  // to walls. A blade that only clears what happens to be under one point in front of it leaves most of a pile
+  // standing, and at speed it steps clean over things between frames — so the swath is swept from where the blade
+  // was to where it is, in steps no longer than its own width, and a bulldozer destroys everything it touches in
+  // there. Anything else merely nudges what it runs over, at `spec.clear`, which spans 0.4 to 50.
   sweep(car, dt) {
     const spec = car.spec, v = car.speed
-    if (!this.physics?.world || !spec.clear || Math.abs(v) < 1) return
+    if (!this.physics?.world || !spec.clear || Math.abs(v) < 0.2) return
     const D = T.physics.debris
     const f = car.forward()
     const reach = spec.length / 2 + D.sweepAhead
@@ -123,13 +128,20 @@ export class Combat {
     const b = this.blades.get(car.mesh)
     const carts = spec.push === true && (!b || b.t < 0.5)
     const push = spec.clear * D.sweepPush * Math.min(1, Math.abs(v) / 8) * dt
-    // A blade is wider than the machine, and it takes the whole swath: shove and cart at the same radius, or the
-    // rubbish is simply pushed along in front of the blade for ever and never actually cleared, which is what the
-    // first version of this did and what the complaint was.
-    const r = (spec.track ?? 2) * 0.6 + 0.6 + (carts ? D.bladeExtra : 0)
+    const r = carts ? (spec.bladeWidth ?? 3.4) / 2 + D.bladeExtra : (spec.track ?? 2) * 0.6 + 0.6
     const x = car.x + f.x * reach, z = car.z + f.z * reach
-    const { carted } = this.physics.shove(x, car.y + 0.4, z, r, Math.sign(v) * f.x, Math.sign(v) * f.z, push, carts ? r : 0)
-    if (carted) this.effects.dust(x, car.y + 0.4, z, 1 + carted * 0.25)
+    const y = car.y + D.sweepLift
+    const was = this.bladeWas ?? { x, z }
+    const dx = x - was.x, dz = z - was.z
+    const n = Math.max(1, Math.min(D.sweepSteps, Math.ceil(Math.hypot(dx, dz) / (r * 0.9))))
+    let carted = 0
+    for (let i = 1; i <= n; i++) {
+      const k = i / n
+      carted += this.physics.shove(was.x + dx * k, y, was.z + dz * k, r,
+                                   Math.sign(v) * f.x, Math.sign(v) * f.z, push / n, carts ? r : 0).carted
+    }
+    this.bladeWas = { x, z }
+    if (carted) this.effects.dust(x, y, z, 1.2 + carted * 0.2)
   }
 
   collide(car, dt, input) {
@@ -230,17 +242,34 @@ export class Combat {
       this.effects.shake(Math.min(0.6, car.landImpact / 12))
     }
     this.moveBlades(dt)
+    // Every trick is paid for out of the same meter the boost and the thrusters spend, so what limits you is fuel
+    // rather than a stopwatch. What is left of the stopwatch is `refire`, which is only there to stop a held key
+    // firing once a frame — the trike empties a full meter in about a second if you hold it down.
     const a = car.spec.ability
-    if (a.kind === "none" || a.kind === "thrust" || !input.ability || this.cd > 0) return
+    if (a.kind === "none" || a.kind === "thrust" || this.cd > 1e-4) return   // not `> 0`: the last frame leaves float dust
+    const held = a.repeat ? input.trick : input.ability
+    if (!held) return
+    const cost = a.cost ?? 0
+    if (cost > 0 && car.boostMeter < cost) return
     switch (a.kind) {
       case "missile": this.launch(car, true); break
       case "blade":   this.toggleBlade(car.mesh, true); break
     }
-    this.cd = a.cooldown
+    if (cost > 0) car.boostMeter = Math.max(0, car.boostMeter - cost)
+    this.cd = a.refire ?? 0.05
     this.send("fire", { kind: a.kind, x: car.x, y: car.y, z: car.z, yaw: car.yaw, ...(this.lastShot ?? {}) })
   }
 
-  get cooldownFraction() { const c = this.car?.spec.ability.cooldown; return c ? this.cd / c : 0 }
+  // The bar under the speedometer: how ready the trick is. Out of meter reads as completely spent, because that is
+  // what is actually stopping you — the refire gap is fifty milliseconds and nobody can see it.
+  get cooldownFraction() {
+    const a = this.car?.spec.ability
+    if (!a || a.kind === "none") return 0
+    const cost = a.cost ?? 0
+    if (cost > 0 && (this.car.boostMeter ?? 0) < cost) return 1
+    const r = a.refire ?? 0
+    return r ? this.cd / r : 0
+  }
 
   // Fire from where the launcher actually is. The tube is a group on the trike's own mesh, so its muzzle and the
   // direction it points come off the matrix — which is the end of the two copies of those offsets that used to sit

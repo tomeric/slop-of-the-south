@@ -9,31 +9,31 @@ import { casts } from "game/Shadows"
 // The mesh builders honour the contract the suspension and the effects expect: userData.wheels (a pivot per wheel
 // at its corner, with its radius), userData.lights (head and tail materials) and userData.flames (exhaust sprites).
 export const VEHICLES = [
-  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Eén raketwerper, een raket om de driekwart seconde.",
+  { id: "trike", naam: "Trike", blurb: "Snel en wendbaar, maar hij deukt alleen zichzelf bij een botsing. Houd E ingedrukt en de raketten blijven komen zolang de turbometer het volhoudt.",
     maxSpeed: 32, accel: 11, brakeForce: 20, maxSteer: 0.6, wheelbase: 1.9, track: 1.4, length: 2.6,
     side: 1, bottom: 1, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },
     mass: 350, com: 0.45, grip: 1.0, bite: 0.25,           // kg, centre of mass above the contact patch
     body: { hx: 0.6, hy: 0.42, hz: 1.1, y: 0.76, z: 0.2 }, // the hull, clear of the ground: the wheels carry the car
     smashMin: 13, smashPanels: 2, smashLoss: 1.4,          // it takes a proper run-up, and the wall takes it out of you
-    ability: { kind: "missile", cooldown: 0.75, hint: "E raket" } },
+    ability: { kind: "missile", repeat: true, refire: 0.1, cost: 0.1, hint: "E raketten (ingedrukt houden)" } },   // ten to a full meter
   { id: "monster", naam: "Monstertruck", blurb: "Even snel, hoog op de wielen. Springt en verplettert wat eronder ligt; drift met je flank tegen een huis voor de meeste schade.",
     maxSpeed: 32, accel: 9, brakeForce: 18, maxSteer: 0.5, wheelbase: 3.4, track: 2.4, length: 5.0,
     side: 2, bottom: 4, clear: 1.0, push: false, pushMin: 0, cam: { dist: 1.25, height: 1.3 },   // flanks and lands on things
     mass: 4000, com: 1.15, grip: 1.0, bite: 0.4,
     body: { hx: 0.95, hy: 0.75, hz: 2.1, y: 1.9, z: 0.1 },
     smashMin: 6, smashPanels: 4, smashLoss: 0.7,
-    ability: { kind: "thrust", cooldown: 0, hint: "E stuwraketten (ingedrukt houden)" } },
-  { id: "bulldozer", naam: "Bulldozer", blurb: "Traag, maar ramt op snelheid dwars door alles heen en veegt puin in één keer weg. Het blad op en neer beukt een huis extra.",
+    ability: { kind: "thrust", hint: "E stuwraketten (ingedrukt houden)" } },
+  { id: "bulldozer", naam: "Bulldozer", blurb: "Traag, maar ramt op snelheid dwars door alles heen. Met het blad omlaag veegt hij elke steen van de weg; het blad op en neer beukt een huis extra.",
     maxSpeed: 12, accel: 5, brakeForce: 14, maxSteer: 0.6, wheelbase: 3.2, track: 2.4, length: 5.5,
     side: 1, bottom: 1, blade: 1.5, clear: 50, push: true, pushMin: 2, cam: { dist: 1.3, height: 1.3 },   // blade: while it is moving
-    mass: 12000, com: 0.85, grip: 1.1, bite: 1.0,
+    mass: 12000, com: 0.85, grip: 1.1, bite: 1.0, bladeWidth: 3.4,   // the plate is 3.4 m across; it clears all of that
     body: { hx: 1.2, hy: 0.6, hz: 1.8, y: 1.3, z: 0.3 },   // the hull only: the tracks are drawn to y 0.1 and would scrape
     smashMin: 1.5, smashPanels: 7, smashLoss: 0.2,         // it is a bulldozer: it walks through walls
-    ability: { kind: "blade", cooldown: 1.0, hint: "E blad op/neer" } },
+    ability: { kind: "blade", refire: 0.35, cost: 0.06, hint: "E blad op/neer" } },
 ]
 const AUTO = { id: "auto", naam: "Auto", length: 4.1, wheelbase: 2.6, track: 1.6, side: 1, bottom: 1, clear: 0.4, push: false, pushMin: 0, smashMin: 13, smashPanels: 2, smashLoss: 1.4, cam: { dist: 1, height: 1 },
   mass: 1400, com: 0.5, grip: 1.0, bite: 0.3, body: { hx: 0.9, hy: 0.51, hz: 2.05, y: 0.79, z: 0 },
-  ability: { kind: "none", cooldown: 0, hint: "" } }
+  ability: { kind: "none", hint: "" } }
 
 export const vehicleSpec = (id) => VEHICLES.find((v) => v.id === id) ?? (id === "auto" ? AUTO : VEHICLES[0])
 

@@ -126,7 +126,7 @@ export class Vehicle {
     const D = T.drift
     P.clearForces()                                          // last frame's drag, or it piles up
     // the same hysteresis the boost has, or an empty meter flickers: refill a frame, thrust a frame, forever
-    this.wantThrust = this.spec.ability?.kind === "thrust" && !!input.thrust &&
+    this.wantThrust = this.spec.ability?.kind === "thrust" && !!input.trick &&
       (this.thrusting ? this.boostMeter > 0 : this.boostMeter > T.boost.reengage)
     this.updateBoost(dt, input)
     const v = this.speed, av = Math.abs(v)
