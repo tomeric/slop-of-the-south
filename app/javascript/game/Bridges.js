@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { noOutline } from "game/Outline"
+import { ROAD_LIFT } from "game/Roads"
 
 // Bridges. The server already decides where one is (tagged, over water, or floating above the terrain for long
 // enough) and gives the deck its ramps, so what is left is the object itself: a slab with a fascia and a soffit, a
@@ -60,6 +61,31 @@ export function buildBridges(roads, terrainAt) {
 }
 
 // consecutive runs of bridge points ([x, z, y, 1]), each at least two points long
+// The deck as something to drive on. The drawn bridge is a shell — fascia, parapet, railing — and the terrain
+// heightfield underneath it is the valley floor, so without this a car with a real chassis drives off the bank and
+// into the river. One oriented slab per deck segment, the width the deck is drawn and topped at the surface
+// `ChunkManager.heightAt` reports (the road level plus ROAD_LIFT), with a little overlap at the joints so a bend
+// does not open a gap. Bridges are rare — about a third of a span per tile — so this costs a handful of colliders.
+export function bridgeDecks(roads) {
+  const out = []
+  const thick = DECK + ROAD_LIFT
+  for (const road of roads ?? []) {
+    for (const span of runs(road.pts)) {
+      for (let i = 1; i < span.length; i++) {
+        const [ax, az, ay] = span[i - 1], [bx, bz, by] = span[i]
+        const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz)
+        if (len < 0.05) continue
+        out.push({
+          x: (ax + bx) / 2, y: (ay + by) / 2 + ROAD_LIFT - thick / 2, z: (az + bz) / 2,
+          hx: road.width / 2 + OVER, hy: thick / 2, hz: len / 2 + 0.25,
+          yaw: Math.atan2(dx, dz),                              // local +z runs along the segment
+        })
+      }
+    }
+  }
+  return out
+}
+
 function runs(pts) {
   const out = []
   let run = []

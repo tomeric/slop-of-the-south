@@ -35,8 +35,9 @@ export class Structures {
     this.built = new Map()                    // key → { obj, group, pieces, geos }
     this.queue = []
     this.falling = new Set()                  // buildings with a piece missing, waiting for the flood fill
+    this.slabbed = new Map()                  // key → obj for the buildings wearing a slab shell instead of pieces
     this.onDamage = null                      // set by game.js: a broken piece counts against the building's hp
-    this.stats = { built: 0, pieces: 0, buildMs: 0, queued: 0, fell: 0 }
+    this.stats = { built: 0, pieces: 0, buildMs: 0, queued: 0, fell: 0, slabs: 0 }
   }
 
   update(car) {
@@ -65,6 +66,40 @@ export class Structures {
     this.settle()
     const now = performance.now()
     for (const [key, entry] of this.built) if (entry.dying && now - entry.dying > T.physics.pieces.settle * 1000) this.drop(key)
+    this.slabs(car)
+  }
+
+  // The second tier of solid. Only so many houses can be built out of pieces — `maxBuildings` caps it, `perFrame`
+  // rations it, and the OSM boxes have no faces to build from at all — but every one of them still has to stop a
+  // car that now has a real chassis. So everything intact inside `T.physics.solid.radius` that is not built wears a
+  // shell of slabs instead (game/Physics.js `solid`), and hands over the moment it is built for real.
+  slabs(car) {
+    const S = T.physics.solid
+    const phys = this.physics
+    if (!phys?.world) return
+    const want = new Set(), fresh = []
+    this.index.near(car.x, car.z, S.radius, (obj) => {
+      if (obj.state !== 0 || !obj.rings || this.built.has(obj.key)) return
+      want.add(obj.key)
+      if (!this.slabbed.has(obj.key)) fresh.push(obj)
+    })
+    for (const [key, obj] of this.slabbed) {
+      if (want.has(key)) continue
+      // a house that has just been built, or been knocked down, loses its shell at once; one that has merely
+      // drifted to the rim keeps it until it is properly out of range, or it flickers
+      const far = Math.hypot(obj.x - car.x, obj.z - car.z) > S.radius * S.keep
+      if (far || this.built.has(key) || obj.state !== 0) { phys.unsolid(key); this.slabbed.delete(key) }
+    }
+    fresh.sort((a, b) => Math.hypot(a.x - car.x, a.z - car.z) - Math.hypot(b.x - car.x, b.z - car.z))
+    for (let i = 0; i < S.perFrame && i < fresh.length; i++) {
+      if (phys.solid(fresh[i])) this.slabbed.set(fresh[i].key, fresh[i])
+    }
+    this.stats.slabs = this.slabbed.size
+  }
+
+  unslab(key) {
+    if (!this.slabbed.delete(key)) return
+    this.physics?.unsolid(key)
   }
 
   build(obj) {
@@ -159,11 +194,15 @@ export class Structures {
     this.stats.built = this.built.size
   }
 
-  clear() { for (const key of [...this.built.keys()]) this.drop(key) }
+  clear() {
+    for (const key of [...this.built.keys()]) this.drop(key)
+    for (const key of [...this.slabbed.keys()]) this.unslab(key)
+  }
 
   // a tile going out takes its buildings with it: the handles are about to be dropped from the index
   dropTile(tile) {
     for (const [key, entry] of this.built) if (entry.obj.tile === tile) this.drop(key)
+    for (const [key, obj] of [...this.slabbed]) if (obj.tile === tile) this.unslab(key)
   }
 
   get(key) { return this.built.get(key) }

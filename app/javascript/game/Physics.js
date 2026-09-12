@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { TUNING as T } from "game/Tuning"
 import { noOutline } from "game/Outline"
+import { bridgeDecks } from "game/Bridges"
 
 // Rigid bodies, so that what comes off a building falls on the ground instead of fading out in mid-air. Rapier
 // (Rust compiled to WebAssembly) does the solving; this module owns the world, its clock, and the pool of bodies.
@@ -20,14 +21,17 @@ import { noOutline } from "game/Outline"
 // It does not own the car. The car keeps the arcade model it was tuned with and enters the world as a kinematic
 // body: it shoves debris around at the speed it is really moving, and nothing can shove it back. Teleports have to
 // be told about (`warp`), or the solver reads a 50 km jump as a velocity and fires the neighbourhood into orbit.
+//                                                    bit 0 terrain, 1 solid, 2 debris, 3 car, 4 missile
 const GROUP = {                                       // (what I am << 16) | (what I collide with)
-  terrain: (1 << 16) | 4,
-  solid: (2 << 16) | 4,
-  debris: (4 << 16) | 15,
-  car: (8 << 16) | 4,
+  terrain: (1 << 16) | (4 | 8 | 16),
+  solid: (2 << 16) | (4 | 8 | 16),                    // standing building pieces, and the slabs that stand in for them
+  debris: (4 << 16) | (1 | 2 | 4 | 8 | 16),
+  car: (8 << 16) | (1 | 2 | 4),                       // a real chassis: the ground and the walls push back now
+  missile: (16 << 16) | (1 | 2 | 4),                  // hits the world, not the trike that fired it
   // what a shape query says it is, so that it matches the standing pieces: a query only hits a collider when each
-  // side's membership is in the other's filter
-  query: (4 << 16) | 15,
+  // side's membership is in the other's filter. It borrows the debris bit, and deliberately leaves the car out of
+  // its filter so a query at the bumper does not keep finding the bumper.
+  query: (4 << 16) | (1 | 2 | 4),
 }
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 const CHIP_COLOURS = [0x9a9186, 0x8a8078, 0xa89c8c, 0x77706a, 0xb0a595]
@@ -45,6 +49,7 @@ export class Physics {
     this.waiting = []                                 // tiles that arrived while the engine was still loading
     this.chips = []                                   // the pool: every dynamic body in the world today
     this.pieces = new Map()                           // collider handle → { entry, piece } for everything standing
+    this.solids = new Map()                           // key → the slab body standing in for a building with no pieces
     this.moving = new Set()                           // the pieces that have come loose and are still moving
     this.acc = 0
     this.alpha = 0
@@ -87,6 +92,17 @@ export class Physics {
     this.world.createCollider(
       this.R.ColliderDesc.heightfield(n - 1, n - 1, heights, { x: size, y: 1, z: size })
         .setFriction(T.physics.debris.friction).setCollisionGroups(GROUP.terrain), body)
+    // The bridges in this tile ride on the same body: the heightfield under a bridge is the valley floor, so
+    // without a deck to stand on anything with a chassis drives off the bank. Collider translations are body-local,
+    // hence the subtraction.
+    const ox = t.ox + size / 2, oz = t.oz + size / 2
+    for (const d of bridgeDecks(tile.roads)) {
+      this.world.createCollider(
+        this.R.ColliderDesc.cuboid(d.hx, d.hy, d.hz)
+          .setTranslation(d.x - ox, d.y, d.z - oz)
+          .setRotation({ x: 0, y: Math.sin(d.yaw / 2), z: 0, w: Math.cos(d.yaw / 2) })
+          .setFriction(T.physics.debris.friction).setCollisionGroups(GROUP.terrain), body)
+    }
     this.tiles.set(tile.key, body)
     this.stats.tiles = this.tiles.size
   }
@@ -97,6 +113,47 @@ export class Physics {
     this.world.removeRigidBody(body)
     this.tiles.delete(tile.key)
     this.stats.tiles = this.tiles.size
+  }
+
+  // ---- the buildings that are not built out of pieces ----------------------------------------------------------
+
+  // A house near enough to drive into but too far, too many or too plain to be built (game/Structures.js caps how
+  // many are, and the OSM boxes have no faces to build from) still has to stop a car. So it gets one upright slab
+  // per footprint edge on a single fixed body: hollow inside, which is the point — a convex hull would fill in an
+  // L-shaped block's courtyard and a terrace's alley and you would drive into thin air. Rings arrive open, so the
+  // last edge wraps back to the first point.
+  solid(obj) {
+    if (!this.world || this.solids.has(obj.key) || !obj.rings) return 0
+    const S = T.physics.solid
+    const base = obj.y ?? (this.chunks ? this.chunks.heightAt(obj.x, obj.z) : 0)
+    const h = Math.max(2, obj.h ?? 6)
+    const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed())
+    let n = 0
+    for (const raw of obj.rings) {
+      const ring = simplify(raw, S.jog)
+      for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+        const ax = ring[j], az = ring[j + 1], bx = ring[i], bz = ring[i + 1]
+        const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz)
+        if (len < 0.1) continue
+        const yaw = Math.atan2(dx, dz)                // local +z runs along the wall, +x through it
+        this.world.createCollider(
+          this.R.ColliderDesc.cuboid(S.thick / 2, h / 2, len / 2)
+            .setTranslation((ax + bx) / 2, base + h / 2, (az + bz) / 2)
+            .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) })
+            .setCollisionGroups(GROUP.solid), body)
+        n++
+      }
+    }
+    if (!n) { this.world.removeRigidBody(body); return 0 }
+    this.solids.set(obj.key, body)
+    return n
+  }
+
+  unsolid(key) {
+    const body = this.solids.get(key)
+    if (!body) return
+    this.world.removeRigidBody(body)
+    this.solids.delete(key)
   }
 
   // ---- the debris pool --------------------------------------------------------------------------------------------
@@ -412,6 +469,31 @@ export class Physics {
 // A piece's oriented box in world terms: where its centre is, how big it is, and which way it is turned. The box is
 // built in the plane the piece was made in (u along the wall, v up, n out of it), so a panel on a street that does
 // not run north-south still gets a collider that lies flat against it.
+// A BAG footprint is surveyed, so it is full of 20 cm jogs where a bay window or a downpipe was measured. Each one
+// would be its own collider. Drop any vertex that sits within `tol` of the line between its neighbours: the wall
+// moves by less than the slab is thick, and a third of the colliders go away.
+function simplify(ring, tol) {
+  if (ring.length <= 8) return ring                             // a box: nothing to gain
+  let pts = Array.from(ring)
+  for (let pass = 0; pass < 4; pass++) {
+    const out = []
+    const n = pts.length / 2
+    for (let i = 0; i < n; i++) {
+      const a = ((i - 1 + n) % n) * 2, b = i * 2, c = ((i + 1) % n) * 2
+      const dx = pts[c] - pts[a], dz = pts[c + 1] - pts[a + 1]
+      const len = Math.hypot(dx, dz)
+      const off = len > 1e-6
+        ? Math.abs(dx * (pts[a + 1] - pts[b + 1]) - (pts[a] - pts[b]) * dz) / len
+        : Math.hypot(pts[b] - pts[a], pts[b + 1] - pts[a + 1])
+      if (off >= tol || out.length / 2 + (n - i - 1) < 4) { out.push(pts[b], pts[b + 1]) }
+    }
+    if (out.length === pts.length) return out
+    pts = out
+    if (pts.length <= 8) return pts
+  }
+  return pts
+}
+
 function worldBox(obb) {
   _mm.makeBasis(obb.basis.u, obb.basis.v, obb.basis.n)
   const q = _qq.setFromRotationMatrix(_mm)

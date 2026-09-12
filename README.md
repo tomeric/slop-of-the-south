@@ -432,6 +432,18 @@ chip — measured, dropping boxes 20 m onto a hillside, 0.30 m chips fell throug
 Anything that still gets away is caught by `floorDrop` and recycled. A 100-body scene steps in 0.15 ms.
 `?fysica=0` turns the whole thing off and, because the import is dynamic, does not even download the 2 MB.
 
+**What is solid** is three tiers, because the terrain heightfield on its own is not a world you can drive in. The
+heightfield is close enough for roads — measured over 62 001 samples in a village tile, it sits a median 5 cm under
+the surface the game actually draws, p99 26 cm — but it knows nothing about bridges or buildings. So each tile also
+hands over an oriented slab per **bridge deck** segment, topped at the surface `heightAt` reports: without it the
+ground under a bridge is the valley floor, seven metres down. And every intact **building** inside
+`T.physics.solid.radius` that is not built out of pieces — the overflow past `maxBuildings`, whatever is still
+queued, the OSM boxes with no faces to build from — wears a shell of upright slabs, one per footprint edge, hollow
+inside so an L-shaped block keeps its courtyard where a convex hull would wall it off. Surveyed footprints are full
+of 20 cm jogs, so the ring is simplified to `solid.jog` first: in the densest street in Maastricht that is 24
+buildings and 185 colliders rather than 1140, and it costs 0.04 ms a step. A building hands its shell over the
+moment it is built for real, and takes it back if it is dropped.
+
 **Shadows** (`?schaduw`, `game/Shadows.js`) are off by default and cost nothing while they are. Turned on, the sun
 casts through one orthographic box of ±140 m at 2048² — a 14 cm texel — hung 45 % of its own width ahead of the
 camera and snapped to whole texels, without which the map's grid slides under the world and every edge crawls at
