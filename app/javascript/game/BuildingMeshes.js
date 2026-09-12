@@ -152,7 +152,7 @@ export function buildBuildingMeshes(meshes, reg) {
       for (const [name, p] of buckets) { const start = at[name] ?? 0, count = p.pos.length / 3 - start; if (count) parts.push({ name, start, count }) }
       if (parts.length) {
         const rings = b.fp ?? [hullXZ(xz)]
-        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, storeys, src: T.buildings.structure.on ? packFaces(b) : null, h: top - oy, max: buildingHp(rings), parts })
+        handles.push({ key: `m:${b.id}`, kind: "m", rings, x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, y: oy, wall: wallH, eave: eaveH, walls, storeys, woz: b.w ?? 0, src: T.buildings.structure.on ? packFaces(b) : null, h: top - oy, max: buildingHp(rings), parts })
       }
     }
   }

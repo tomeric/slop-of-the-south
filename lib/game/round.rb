@@ -10,10 +10,12 @@ module Game
     FLOAT          = { length: 12, width: 4 }.freeze
     BUILDING_KINDS = %w[m b].freeze
 
-    Obj    = Struct.new(:key, :kind, :x, :z, :at, :hp, :max, :state, keyword_init: true)   # at: nil for objects off the path
+    MAX_WOZ        = 50_000_000                   # € a client may claim one building is worth (lib/tasks/woz.rake caps it there)
+
+    Obj    = Struct.new(:key, :kind, :x, :z, :at, :hp, :max, :state, :woz, keyword_init: true)   # at: nil for objects off the path
     Player = Struct.new(:id, :name, :vehicle, :joined_at, :last_action_at, :x, :z, :tabs, keyword_init: true)
 
-    attr_reader :id, :status, :result, :arena, :path, :spawn, :speed, :started_at, :ended_at, :obstacles, :objects
+    attr_reader :id, :status, :result, :arena, :path, :spawn, :speed, :started_at, :ended_at, :obstacles, :objects, :damage
     attr_accessor :next_at
 
     def initialize(id:, arena:, path:, spawn:, obstacles:, next_at: nil)
@@ -21,6 +23,7 @@ module Game
       @speed = path[:length] / (CROSSING_MS / 1000.0)
       @obstacles = obstacles.map { Obj.new(**_1, state: :intact) }.sort_by(&:at)
       @objects = @obstacles.to_h { [ _1.key, _1 ] }        # everything touched this round, corridor objects included
+      @damage = 0.0                                        # euros of property flattened, everybody's, this round
       @status = :intermission
     end
 
@@ -56,12 +59,18 @@ module Game
     # One damage report. `max` is pinned when the object is first seen: clients compute it from the object's size,
     # the server does not know sizes. Buildings crumble to rubble at zero and get RUBBLE_SHARE of their hit points
     # back; everything else is gone at once. Returns the object when it changed, nil otherwise.
-    def hit(key, damage, max)
+    def hit(key, damage, max, woz = nil)
       return if damage <= 0
       obj = objects[key] ||= Obj.new(key:, kind: key[0], state: :intact)
       return if obj.state == :gone
       obj.max ||= max.clamp(1, MAX_HP)
       obj.hp ||= obj.max
+      obj.woz ||= woz&.clamp(0, MAX_WOZ)
+      # The bill, in euros: what this hit actually took off, as a share of the whole. Whoever reports the first hit
+      # on a building says what it is worth and nobody can raise it afterwards, and only an intact one can be
+      # charged for — so a building adds its own value to the total once and clearing its rubble afterwards is free,
+      # however many players are hammering it.
+      @damage += obj.woz * [ damage, obj.hp ].min / obj.max if obj.woz && obj.hp.positive? && obj.state == :intact
       obj.hp -= damage
       if obj.hp <= 0 && BUILDING_KINDS.include?(obj.kind) && obj.state == :intact
         obj.state, obj.hp = :rubble, (obj.max * RUBBLE_SHARE).ceil
@@ -79,7 +88,7 @@ module Game
     end
 
     def to_h(players)
-      { id:, status:, result:, arena:, path:, speed: speed.round(4), float: FLOAT,
+      { id:, status:, result:, arena:, path:, speed: speed.round(4), float: FLOAT, damage: damage.round,
         started_at:, ends_at:, next_at:, spawn:,
         obstacles: obstacles.map { obj_h(_1).merge(kind: _1.kind, x: _1.x, z: _1.z, at: _1.at) },
         objects: objects.values.reject(&:at).map { obj_h(_1) },

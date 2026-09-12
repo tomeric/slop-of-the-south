@@ -9,7 +9,7 @@ class BuildingMesh < ApplicationRecord
   def self.in_tile(tx, ty)
     env = Road.tile_envelope_sql(tx, ty)
     connection.select_all(<<~SQL).map { |r| r.merge("geojson" => JSON.parse(r["geojson"])) }
-      SELECT bag_id, roof_type, ground_height, levels, labels, ST_AsGeoJSON(geom, 2) AS geojson
+      SELECT bag_id, roof_type, ground_height, levels, woz, labels, ST_AsGeoJSON(geom, 2) AS geojson
       FROM building_meshes
       WHERE ST_Intersects(center, #{env})
     SQL

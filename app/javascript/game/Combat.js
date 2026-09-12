@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { distTo } from "game/Destructibles"
 import { softTexture } from "game/Effects"
-import { TUNING as T } from "game/Tuning"
+import { TUNING as T, euro } from "game/Tuning"
 
 // What the player's vehicle does to the world: ramming, driving over rubble, and the tricks on E: the trike's
 // missiles, the monster truck's jump and the bulldozer's blade. Everything here is local prediction plus messages:
@@ -28,6 +28,9 @@ export class Combat {
     this.physics = physics
     this.pending = new Map()        // key → { damage, max } since the last flush
     this.lastRam = new WeakMap()    // object → time of the last ram, so a car resting against it does not hammer it
+    this.billed = new WeakMap()     // object → euros taken off it since it last counted towards a figure
+    this.pot = 0                    // euros come due since the last bang, summed across every building involved
+    this.potAt = [ 0, 0, 0 ]
     this.enabled = false            // only while a round is running
     this.shots = []                 // { mesh, x, y, z, vx, vy, vz, life, own, puff }
     this.blades = new Map()         // mesh → { t, target, slammed } for every bulldozer blade on screen
@@ -102,6 +105,27 @@ export class Combat {
       }
       break
     }
+  }
+
+  // What this hit costs in euros. A building has to lose `T.money.label` of itself before it is worth a figure, and
+  // everything that comes due inside one flush — a tenth of a second, whether that is three panels of one house or
+  // a whole terrace going over at once — goes up as a single summed number rather than a stack of small ones.
+  // The running total is the server's to keep (lib/game/round.rb); this is only the label.
+  bill(obj, dmg) {
+    if (!(obj.woz > 0)) return
+    const euros = obj.woz * Math.min(dmg, obj.hp ?? obj.max) / (obj.max || 1)
+    const owed = (this.billed.get(obj) ?? 0) + euros
+    if (owed < T.money.label) { this.billed.set(obj, owed); return }
+    this.billed.set(obj, 0)
+    this.pot += owed
+    this.potAt = [ obj.x, (this.heightAt(obj.x, obj.z) ?? 0) + (obj.h ?? 4) * 0.8, obj.z ]
+  }
+
+  // one bang for everything that has come due since the last one
+  bang() {
+    if (!(this.pot > 0)) return
+    this.effects.price(...this.potAt, this.pot, euro(this.pot))
+    this.pot = 0
   }
 
   rammed(obj) {
@@ -250,8 +274,9 @@ export class Combat {
 
   queue(obj, dmg) {
     if (!this.enabled || dmg < 0.5 || obj.state === 2) return
+    this.bill(obj, dmg)
     for (const key of obj.keys ?? [obj.key]) {
-      const q = this.pending.get(key) ?? { damage: 0, max: obj.max }
+      const q = this.pending.get(key) ?? { damage: 0, max: obj.max, woz: obj.woz }
       q.damage += dmg
       this.pending.set(key, q)
     }
@@ -259,14 +284,18 @@ export class Combat {
 
   // every 100 ms from game.js, next to the position update
   flush() {
+    this.bang()                     // everything that came due in the last tenth of a second, as one figure
     if (!this.pending.size) return
-    const hits = [...this.pending].map(([key, h]) => ({ key, damage: Math.round(h.damage * 10) / 10, max: h.max }))
+    // `woz` is what this building is worth in euros, so the server can total the damage the room has done. It is
+    // sent with every hit and the server keeps the first figure it is given for a building.
+    const hits = [...this.pending].map(([key, h]) => ({ key, damage: Math.round(h.damage * 10) / 10, max: h.max, woz: h.woz || 0 }))
     this.pending.clear()
     for (let i = 0; i < hits.length; i += 32) this.send("hit", { hits: hits.slice(i, i + 32) })
   }
 
   reset() {
     this.pending.clear()
+    this.pot = 0
     while (this.shots.length) this.drop(this.shots.length - 1)
     this.cd = 0
   }

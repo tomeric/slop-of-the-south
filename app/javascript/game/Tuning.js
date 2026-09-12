@@ -120,6 +120,7 @@ export const TUNING = {
     smash: { speed: 9, exit: 4, loss: 0.7, reach: 1.0, maxPanels: 3, shove: 0.35, damage: 4, grind: 2.5 },
     blast: { reach: 0.8, push: 7 },           // a rocket takes the pieces within this much of its radius with it
   },
+  money: { label: 40000 },                  // € off one building before a bang goes up over it: ~7 to flatten a house (live)
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)
   ground: {
@@ -156,6 +157,15 @@ export const TUNING = {
       25: { dens: 2, mix: ["grass", "grass", "flower", "dry"], margin: 0.3 },  // berm: right up to the road
     },
   },
+}
+
+// Euros, the way a Dutch newsreader would say them: € 340.000, € 1,2 mln, € 12 mln, € 1,4 mrd.
+export function euro(n) {
+  const v = Math.round(n)
+  if (v >= 1e9) return `€ ${(v / 1e9).toFixed(1).replace(".", ",")} mrd`
+  if (v >= 1e7) return `€ ${Math.round(v / 1e6)} mln`
+  if (v >= 1e6) return `€ ${(v / 1e6).toFixed(1).replace(".", ",")} mln`
+  return `€ ${v.toLocaleString("nl-NL")}`
 }
 
 // exponential approach: frame-rate independent first-order smoothing

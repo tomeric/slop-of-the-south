@@ -43,6 +43,21 @@ module Game
       assert_equal [ "t:5,5" ], r.to_h([]).dig(:objects).map { _1[:key] }
     end
 
+    test "the euro counter bills each intact building once, for what it actually took off" do
+      r = round
+      r.hit("m:1", 25, 100, 400_000)                                  # a quarter of a four-tonne house
+      assert_in_delta 100_000, r.damage, 1
+      r.hit("m:1", 75, 100, 9_000_000)                                # the second claim is ignored, like max
+      assert_in_delta 400_000, r.damage, 1
+      r.hit("m:1", 50, 100, 400_000)                                  # clearing the rubble is free
+      assert_in_delta 400_000, r.damage, 1
+      r.hit("m:2", 500, 100, 400_000)                                 # one huge hit still bills one house
+      assert_in_delta 800_000, r.damage, 1
+      r.hit("m:3", 100, 100, 99_999_999)                              # nobody owns a hundred-million-euro house
+      assert_in_delta 800_000 + Round::MAX_WOZ, r.damage, 1
+      assert_equal 800_000 + Round::MAX_WOZ, r.to_h([])[:damage]
+    end
+
     test "the shared action waits a minute and is free again when a round starts" do
       r = round
       p = Round::Player.new(id: "p", name: "Piet", joined_at: 0, tabs: 1)

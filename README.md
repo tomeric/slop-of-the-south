@@ -52,6 +52,7 @@ Game space is RD minus a fixed origin so floats stay small:
 | Terrain | **AHN** (Actueel Hoogtebestand Nederland) DTM via PDOK WCS | OSM has no elevation. AHN is 0.5 m lidar; the WCS resamples it to the 10 m grid on request, `gdal_fillnodata` fills the holes under buildings and water. Zuid-Limburg is genuinely hilly — 27 m at the Maas to 114 m on the plateau within the phase-1 box. |
 | Traffic signs | **NDW** Verkeersborden (Nationaal Dataportaal Wegverkeer, `traffic-signs/v4/current-state`) | The API answers with the whole country as one 1.2 GB GeoJSON (its filters are ignored), so `rake ndw:fetch` downloads it once and `rake ndw:import` streams it through `jq --stream` into `traffic_signs` for the world bbox (227k signs in Limburg). Every sign face is painted from its RVV code and value on a canvas (`game/Signs.js`: A1 speed discs, B6 yield, G11 cycle path, E4 parking, H1 town entry, J warnings, onderborden with their text …) and faces against the traffic it applies to (`bearing` + 180°). Signs at one spot share a pole. |
 | Lamp posts | **BGT** `Paal` with `plus-type = lichtmast` (bulk extracts, `BGT_BULK_TYPES=paal rake bgt:bulk_fetch bgt:paal_import`) | 101k masts in Limburg, arm turned towards the nearest road, 9 m on main roads, 6 m elsewhere. `Paal` is an optional IMGeo object: the Parkstad municipalities (Heerlen, Kerkrade, Landgraaf, Brunssum …) deliver none; there OSM `highway=street_lamp` (`rake osm:pbf_points`) is the sparse fallback. |
+| What a building is worth | **CBS** wijken en buurten (CC BY 4.0) via PDOK WFS, `gemiddeldeWoningwaarde` | The average WOZ assessment of a house per buurt, divided by how big an average house there actually is (our own BAG footprint × storeys, counting only the 40–1000 m² that can be a house), gives a price per m²; every building is its own floor area at the rate where it stands. `rake woz:fetch woz:value`, then rebuild the tiles. It is what the damage counter adds up when you flatten something. |
 | Traffic lights | **BGT** `Paal` with `plus-type = verkeersregelinstallatiepaal` (990 poles) + OSM `highway=traffic_signals` nodes (2.4k) | Each BGT pole becomes a signal head facing the traffic that approaches it (side of the road decides the direction); where BGT has no poles the OSM node gets one pole per approaching road. Heads run a shared 40 s cycle on the wall clock, phased by axis, so all players see the same colours. Live iVRI state via Talking Traffic is a later stretch goal. |
 
 
@@ -278,6 +279,8 @@ bin/rails ndw:fetch            # NDW traffic-sign register, all of NL (1.2 GB) �
 bin/rails ndw:import           # → traffic_signs inside the world bbox (227k), streamed with jq
 bin/rails dem:fetch            # AHN terrain model from PDOK WCS, chunked → data/dem_raw.tif (10 m)
 bin/rails dem:build            # fill holes, convert → data/dem.raw + dem.json (binary, read lazily)
+bin/rails woz:fetch            # CBS wijken en buurten (PDOK WFS) → neighbourhoods, average house value per buurt
+bin/rails woz:value            # → a price in euros on every building_mesh and building (run before tiles:build)
 bin/rails tiles:build          # → public/tiles/*.json for every tile inside the province (~9k)
 bin/rails map:build            # → public/map/overview.json + 1 km cells for the minimap (also built on demand)
 bin/dev                        # Rails (Puma on :3000)
@@ -369,6 +372,24 @@ a seam appearing wherever two cells meet.
 Cost at the densest village tile: 37 buildings, ~6 600 pieces, 204 k triangles, about 2 ms to convert a house.
 Draw calls are the weak point — one mesh per material per building, +175 on a 790 baseline — which is what
 `maxBuildings` caps until the pieces move into one shared buffer per material.
+
+**What it costs** (`lib/tasks/woz.rake`, `app/models/neighbourhood.rb`): every building in the province carries a
+price. CBS publishes the average WOZ assessment of a house per neighbourhood — `gemiddeldeWoningwaarde`, thousands
+of euros — through the PDOK wijken-en-buurten WFS, along with how many dwellings are there. Divide that average by
+how big an average *house* actually is in the same buurt (measured off our own BAG footprints × storeys, counting
+only the 40–1000 m² that can be a house, or a distribution centre would drag it somewhere no house has ever been)
+and you have a price per square metre. Every building is then its own floor area at the rate where it stands:
+1 217 of 1 374 neighbourhoods priced from CBS, the rest at the province median of about 1 300 €/m², and a
+house-sized building comes out at €287k. A hall with no registered storey count gets one floor rather than its
+height over three, and nothing is allowed past €50M, which is what stopped a chemical plant being worth nine
+hundred million.
+
+The client ships that figure in the tile (`meshes[].w`) and sends it with each `hit`. The server keeps the first
+value it is given for a building and adds up what has actually been knocked off it — `woz × min(damage, hp) / max`,
+and only while it is still intact, so a building costs its own value once and clearing its rubble afterwards is
+free. The room's running total rides out with the verdicts at 4 Hz and sits in the HUD as **€ 1,2 mln schade**.
+Free roam keeps its own total the same way. Every `T.money.label` euros taken off one building, a comic starburst
+goes up over it with the amount in it — and over €200k it says something.
 
 **Taking a house apart.** Every standing piece is a static box in the physics world, on one fixed body per building,
 so the car and the rocket have something to find. Break one — drive through it above `T.physics.smash.speed`, or put

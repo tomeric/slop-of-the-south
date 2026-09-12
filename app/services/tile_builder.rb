@@ -72,6 +72,7 @@ class TileBuilder
         height: height.clamp(2.5, 200.0).round(2),
         kind: b["kind"],
         roof: b["roof_type"],
+        w: b["woz"],
         footprint: ring.map { |x, y| World.to_game(x, y).map { _1.round(2) } }
       }.compact
     end
@@ -103,7 +104,7 @@ class TileBuilder
       # n: the storeys BAG counted (b3_bouwlagen). The client falls back to round(wall height / 3) without it, which
       # is what every tile built before this held; clamped here so a silo does not claim forty floors.
       { id: m["bag_id"].split(".").last, roof: m["roof_type"], o: [ ox, oy, oz ], f: faces,
-        n: m["levels"]&.clamp(1, MAX_LEVELS),
+        n: m["levels"]&.clamp(1, MAX_LEVELS), w: m["woz"],
         fp: (ground_rings.map { ring_xz(_1) } if ground_rings.any?) }.compact
     end
   end

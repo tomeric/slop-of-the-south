@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { euro } from "game/Tuning"
 
 // The round as the server tells it: the town, the parade route, the obstacles and their state, the vote on the
 // next town, the server clock offset and the shared action cooldown, plus every Dutch string on the HUD. Messages
@@ -18,6 +19,7 @@ export class Round {
     this.obstacles = new Map()      // key → obstacle, states kept current from `object` messages
     this.vote = null                // the vote between rounds: { candidates, by, ends_at }, or null
     this.nextActionAt = null        // server ms; null = the action is ready
+    this.damage = 0                 // euros of property the room has flattened this round (lib/game/round.rb totals it)
     this.flashTimer = null
   }
 
@@ -34,7 +36,7 @@ export class Round {
         if (msg.ok === false) this.flash(msg.reason === "unknown" ? "Die plaats ken ik niet" : "De stemming is gesloten")
         else this.setVote(msg.vote)
         break
-      case "object": this.applyObjects(msg.list); break
+      case "object": this.applyObjects(msg.list, msg.damage); break
       case "end":    this.hooks.onEnd?.(msg); break
       case "teleport":
       case "switch":
@@ -47,6 +49,7 @@ export class Round {
   setRound(body, live) {
     const prev = this.round
     this.round = body
+    this.damage = body?.damage ?? 0                                  // a new town starts the bill again
     this.obstacles = new Map((body?.obstacles ?? []).map((o) => [o.key, o]))
     if (body) {
       const fresh = body.id !== prev?.id, started = body.status === "running" && prev?.status !== "running"
@@ -54,6 +57,21 @@ export class Round {
       this.hooks.onRound?.(body, { fresh, started, live })
     }
     this.hud()
+    this.showDamage()
+  }
+
+  // free roam has no server to keep the total, so it keeps its own
+  addDamage(euros) {
+    if (!(euros > 0)) return
+    this.damage += euros
+    this.showDamage()
+  }
+
+  showDamage() {
+    const el = this.els.schade
+    if (!el) return
+    el.hidden = !(this.damage > 0)
+    if (!el.hidden) el.textContent = `${euro(this.damage)} schade`
   }
 
   setVote(vote) {
@@ -62,12 +80,14 @@ export class Round {
     this.hooks.onVote?.(vote)
   }
 
-  applyObjects(list) {
+  applyObjects(list, damage) {
+    if (damage != null) this.damage = damage
     for (const o of list) {
       const ob = this.obstacles.get(o.key)
       if (ob) { ob.state = o.state; ob.hp = o.hp; ob.max = o.max }
     }
     this.hooks.onObjects?.(list)
+    this.showDamage()
   }
 
   get remaining() {

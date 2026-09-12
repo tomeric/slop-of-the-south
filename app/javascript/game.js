@@ -71,9 +71,11 @@ async function main() {
   const index   = new Destructibles(effects)                // every object a player can flatten, in a grid
   // vrij rijden has no server to judge a hit, so the rule from lib/game/round.rb runs here instead
   const localHit = ({ hits }) => {
-    for (const { key, damage, max } of hits) {
+    for (const { key, damage, max, woz } of hits) {
       const cur = index.state.get(key) ?? { hp: max, max, state: "intact" }
       if (cur.state === "gone") continue
+      // the same bill lib/game/round.rb writes: what this hit actually took off, as a share of the whole
+      if (woz > 0 && cur.state === "intact") round.addDamage(woz * Math.min(damage, cur.hp ?? max) / max)
       let hp = (cur.hp ?? max) - damage, state = cur.state
       if (hp <= 0 && (key[0] === "m" || key[0] === "b") && state === "intact") { state = "rubble"; hp = Math.ceil(max * 0.5) }
       else if (hp <= 0) { state = "gone"; hp = 0 }
@@ -136,7 +138,7 @@ async function main() {
   const voteScreen = new VoteScreen(el("stemmen"), { onVote: (name) => net.send("vote", { name }), onName: rename })
   const preview = new Minimap(el("laden-kaart"), config, { onTeleport: () => false, interactive: false })   // the arena on the loading screen
   const ladenRoute = el("laden-route")
-  const round = new Round(playerId, { actie: el("actie"), banner: el("banner"), bannerTitel: el("banner-titel"), bannerSub: el("banner-sub"), flits: el("flits"), route: el("route") }, {
+  const round = new Round(playerId, { actie: el("actie"), banner: el("banner"), bannerTitel: el("banner-titel"), bannerSub: el("banner-sub"), flits: el("flits"), route: el("route"), schade: el("schade") }, {
     onRound: (body, { fresh, live }) => {
       if (fresh) {
         chunks.reload(); index.resetRound(); combat.reset()

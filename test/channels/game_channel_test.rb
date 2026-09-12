@@ -34,10 +34,11 @@ class GameChannelTest < ActionCable::Channel::TestCase
     @manager.tick(T)
     @manager.tick(T + Game::RoundManager::VOTE_MS)
     @manager.tick(T + Game::RoundManager::VOTE_MS + Game::RoundManager::INTERMISSION_MS)
-    hits = [ { "key" => "m:1", "damage" => 30, "max" => 100 }, { "key" => "x:1", "damage" => 30, "max" => 100 }, { "key" => "m:2", "damage" => -5, "max" => 100 } ]
+    hits = [ { "key" => "m:1", "damage" => 30, "max" => 100, "woz" => 500_000 }, { "key" => "x:1", "damage" => 30, "max" => 100 }, { "key" => "m:2", "damage" => -5, "max" => 100 } ]
     perform :hit, hits: hits
     assert_equal 70, @manager.round.objects["m:1"].hp
     assert_nil @manager.round.objects["x:1"]
     assert_nil @manager.round.objects["m:2"]
+    assert_in_delta 150_000, @manager.round.damage, 1                 # thirty per cent of a half-million-euro house
   end
 end

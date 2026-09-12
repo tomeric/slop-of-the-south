@@ -12,6 +12,8 @@
     <%# game time: a full day every 6 minutes (DayNight.js) %>
     <div id="clock"></div>
     <div id="players"></div>
+    <%# what all of us have flattened this round, in euros of WOZ value (Round.js, lib/game/round.rb) %>
+    <div id="schade" hidden></div>
     <%# the shared action: teleport or vehicle switch, one per minute %>
     <div id="actie" hidden></div>
   </div>
@@ -93,7 +95,8 @@
   .bord-wijk { font-size: 12px; font-weight: 500; letter-spacing: .16em; opacity: .95; margin-bottom: 4px; }
   .bord-wijk:empty { display: none; }
   .bord-plaats { font-size: 16px; padding: 7px 16px 8px; }
-  #players, #biome, #clock, #actie { font-size: 14px; background: rgba(255, 255, 255, .6); padding: 3px 9px; border-radius: 4px; }
+  #players, #biome, #clock, #actie, #schade { font-size: 14px; background: rgba(255, 255, 255, .6); padding: 3px 9px; border-radius: 4px; }
+  #schade { font-variant-numeric: tabular-nums; font-weight: 700; color: #8a1414; background: rgba(255, 236, 236, .72); }
   #actie { font-variant-numeric: tabular-nums; }
   .route { position: absolute; width: 40px; }
   #route { right: 30px; top: 50%; transform: translateY(-52%); height: min(54vh, 500px); }

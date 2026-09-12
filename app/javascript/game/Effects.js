@@ -3,19 +3,22 @@ import { TUNING as T } from "game/Tuning"
 
 // Short-lived visuals: explosion flashes, flying debris, dust clouds and a camera shake, plus a fixed pool of sprites
 // for continuous emitters (tyre smoke). Everything here is cosmetic and local; the world state comes from the server.
-const MAX_LIVE = 40
+const MAX_LIVE = 72                                   // a good run throws a lot of price labels at the screen at once
 const flashGeo = new THREE.SphereGeometry(1, 12, 8)
 const debrisGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5)
 const debrisMat = new THREE.MeshStandardMaterial({ color: 0x8a8078, roughness: 1 })
 const confettiGeo = new THREE.PlaneGeometry(0.35, 0.25)
 const CONFETTI = [0xe0241a, 0xf2c14e, 0x2a9d3a].map((color) => new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }))
 let dustTex = null
+const BANG_AT = 24                                    // metres in front of the camera the price labels hang
+const _at = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(), _fwd = new THREE.Vector3()
 
 export class Effects {
   constructor(scene) {
     this.scene = scene
     this.physics = null                     // set at boot: real bodies take over from the hand-thrown boxes below
     this.live = []
+    this.bangs = 0                          // how many price labels have gone up: it picks where the next one lands
     this.shakeAmt = 0
     this.smoke = new SpritePool(scene, T.fx.smokePool, 0xd8d8d8)
   }
@@ -58,6 +61,56 @@ export class Effects {
     }
   }
 
+  // What that just cost, in the only typeface this deserves: a comic starburst with the amount punched through it.
+  //
+  // They are thrown at the *screen* rather than at the building. A bang at the place you hit would sit behind the
+  // wall you are driving through and every one after it would land on top of the last; instead each is pushed out
+  // along the camera's own right and up from the impact, by a fraction of the screen that walks round a golden
+  // angle, so consecutive ones never overlap and a good run fills the view with them.
+  price(x, y, z, euros, text) {
+    const cam = this.camera
+    const tier = euros >= 200000 ? 2 : euros >= 60000 ? 1 : 0
+    const canvas = document.createElement("canvas")
+    canvas.width = 512; canvas.height = 256
+    drawBang(canvas.getContext("2d"), 512, 256, tier, text, euros)
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false })
+    mat.rotation = (Math.random() - 0.5) * 0.35
+    const mesh = new THREE.Sprite(mat)
+    mesh.renderOrder = 21
+
+    // Where on the screen this one goes. The bang is hung in front of the camera rather than on the building it came
+    // off: a label at the wall you are driving through sits behind it, drifts out of frame as you move, and lands on
+    // top of the last one. From a fixed distance ahead, a golden-angle walk over four rings puts every bang in a
+    // different part of the view and a good run fills the screen with them.
+    const i = this.bangs++
+    const angle = i * 2.399963
+    const ring = 0.2 + 0.42 * ((i % 4) / 3)
+    const half = BANG_AT * Math.tan(THREE.MathUtils.degToRad((cam?.fov ?? 60) / 2))
+    const ox = Math.cos(angle) * ring * half * (cam?.aspect ?? 1.8), oy = Math.sin(angle) * ring * half
+    if (cam) {
+      cam.matrixWorld.extractBasis(_right, _up, _fwd)
+      _at.copy(cam.position).addScaledVector(_fwd, -BANG_AT).addScaledVector(_right, ox).addScaledVector(_up, oy)
+    } else {                                                       // before the first frame: hang it over the wreck
+      _right.set(1, 0, 0); _up.set(0, 1, 0)
+      _at.set(x, y + oy, z)
+    }
+    mesh.position.copy(_at)
+    const drift = _up.clone().addScaledVector(_right, (Math.random() - 0.5) * 0.6)
+
+    const _spawn = _at.clone()
+    const tilt = mat.rotation, big = 0.21 + tier * 0.05, rise = 2 + Math.random() * 2.5
+    this.add({ mesh, life: 1.9, t: 0, step: (e, k) => {
+      // a hard pop with an overshoot, a wobble while it hangs, then a drift and out
+      const pop = k < 0.13 ? 1.55 * Math.sin((k / 0.13) * Math.PI / 2) : 1 + 0.55 * Math.exp(-(k - 0.13) * 22) + k * 0.2
+      mat.rotation = tilt + Math.sin(k * 26) * 0.06 * Math.exp(-k * 4)
+      mat.opacity = k < 0.72 ? 1 : 1 - (k - 0.72) / 0.28
+      e.mesh.position.copy(_spawn).addScaledVector(drift, k * rise)   // it drifts off the way it was thrown
+      e.mesh.scale.set(BANG_AT * big * pop, BANG_AT * big * pop * 0.5, 1)
+    } })
+  }
+
   dust(x, y, z, r) {
     const mat = new THREE.SpriteMaterial({ map: dustTexture(), transparent: true, opacity: 0.7, depthWrite: false, color: 0xbfb6a8 })
     const mesh = new THREE.Sprite(mat)
@@ -92,11 +145,14 @@ export class Effects {
 
   dispose(e) {
     this.scene.remove(e.mesh)
-    if (!e.shared) e.mesh.material.dispose()
+    if (e.shared) return
+    e.mesh.material.map?.dispose()
+    e.mesh.material.dispose()
   }
 
   // once per frame, after the camera has moved
   update(dt, camera) {
+    this.camera = camera                                   // the price labels size themselves against it
     this.smoke.update(dt)
     for (let i = this.live.length - 1; i >= 0; i--) {
       const e = this.live[i]
@@ -161,4 +217,55 @@ function dustTexture() {
   ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128)
   dustTex = new THREE.CanvasTexture(c)
   return dustTex
+}
+
+// ---- the bang ---------------------------------------------------------------------------------------------------
+
+// A twelve-point starburst with the amount across it. Everything is drawn twice — once as a fat dark outline, once
+// filled — which is what makes lettering read as comic rather than as a label, and what keeps it legible against a
+// brick wall in sunlight.
+const BANG = ["BOEM!", "KRAK!", "PATS!", "RAMMES!", "KEIHARD!"]
+const FILL = [["#fff3b0", "#ffc93c"], ["#ffd48a", "#ff8c1a"], ["#ffc2b0", "#ff3b1f"]]
+
+function drawBang(ctx, w, h, tier, text, euros) {
+  const cx = w / 2, cy = h / 2
+  const spikes = 12, outer = tier === 2 ? 122 : 112, inner = outer * 0.68
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.scale(2.05, 1)                                           // the burst is wide, like the sprite
+  ctx.beginPath()
+  for (let i = 0; i < spikes * 2; i++) {
+    const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2
+    const r = (i % 2 ? inner : outer) * (0.88 + ((i * 37) % 11) / 44)   // a little ragged, the same way every time
+    ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * r, Math.sin(a) * r)
+  }
+  ctx.closePath()
+  const g = ctx.createRadialGradient(0, -12, 8, 0, 0, outer)
+  g.addColorStop(0, "#fff")
+  g.addColorStop(0.45, FILL[tier][0])
+  g.addColorStop(1, FILL[tier][1])
+  ctx.fillStyle = g
+  ctx.lineJoin = "round"
+  ctx.lineWidth = 9
+  ctx.strokeStyle = "#241408"
+  ctx.stroke()
+  ctx.fill()
+  ctx.restore()
+
+  ctx.textAlign = "center"
+  ctx.lineJoin = "round"
+  const say = tier === 2 ? BANG[Math.floor(euros / 7919) % BANG.length] : null
+  if (say) {
+    ctx.font = "italic 900 46px 'Helvetica Neue', Helvetica, Arial, sans-serif"
+    ctx.lineWidth = 12; ctx.strokeStyle = "#241408"; ctx.strokeText(say, cx, cy - 34)
+    ctx.fillStyle = "#fff"; ctx.fillText(say, cx, cy - 34)
+  }
+  // the amount fills the burst and never runs out of it: measure it and come down a size until it fits
+  let size = tier === 2 ? 70 : 82
+  const room = outer * 2.05 * 1.5
+  do { ctx.font = `italic 900 ${size}px 'Helvetica Neue', Helvetica, Arial, sans-serif`; size -= 4 }
+  while (ctx.measureText(text).width > room && size > 28)
+  const y = say ? cy + 46 : cy + 28
+  ctx.lineWidth = 17; ctx.strokeStyle = "#241408"; ctx.strokeText(text, cx, y)
+  ctx.fillStyle = "#fff"; ctx.fillText(text, cx, y)
 }

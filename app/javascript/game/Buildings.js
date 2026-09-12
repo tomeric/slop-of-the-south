@@ -38,7 +38,7 @@ export function buildBuildings(buildings, reg) {
     if (reg && b.id != null) {
       const ring = b.footprint.flat(), n = b.footprint.length
       const cx = b.footprint.reduce((s, p) => s + p[0], 0) / n, cz = b.footprint.reduce((s, p) => s + p[1], 0) / n
-      handles.push({ key: `b:${b.id}`, kind: "b", rings: [ring], x: cx, z: cz, h: b.height, max: buildingHp([ring]), start: offset, count })
+      handles.push({ key: `b:${b.id}`, kind: "b", rings: [ring], x: cx, z: cz, h: b.height, woz: b.w ?? 0, max: buildingHp([ring]), start: offset, count })
     }
     offset += count
   }

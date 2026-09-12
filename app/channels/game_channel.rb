@@ -39,7 +39,8 @@ class GameChannel < ApplicationCable::Channel
     return unless allowed?("hit")
     hits = Array(data["hits"]).first(MAX_HITS).filter_map do |h|
       key, damage, max = h["key"].to_s, h["damage"].to_f, h["max"].to_f
-      [ key, damage, max ] if key.match?(Game::KEY_RE) && damage.positive? && max.positive?
+      woz = h["woz"].to_i                                         # what the client says the thing is worth, in euros
+      [ key, damage, max, (woz if woz.positive?) ] if key.match?(Game::KEY_RE) && damage.positive? && max.positive?
     end
     manager.hit(player_id, hits) if hits.any?
   end

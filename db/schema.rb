@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_12_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_12_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -35,6 +35,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_060000) do
     t.integer "levels"
     t.string "roof_type"
     t.datetime "updated_at", null: false
+    t.integer "woz"
     t.index ["bag_id"], name: "index_building_meshes_on_bag_id", unique: true
     t.index ["center"], name: "index_building_meshes_on_center", using: :gist
   end
@@ -52,6 +53,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_060000) do
     t.string "source", default: "osm", null: false
     t.string "source_id", null: false
     t.datetime "updated_at", null: false
+    t.integer "woz"
     t.integer "year"
     t.index ["geom"], name: "index_buildings_on_geom", using: :gist
     t.index ["source", "source_id"], name: "index_buildings_on_source_and_source_id", unique: true
@@ -69,6 +71,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_12_060000) do
     t.index ["geom"], name: "index_land_covers_on_geom", using: :gist
     t.index ["layer"], name: "index_land_covers_on_layer"
     t.index ["source_id"], name: "index_land_covers_on_source_id", unique: true
+  end
+
+  create_table "neighbourhoods", force: :cascade do |t|
+    t.string "code", null: false
+    t.datetime "created_at", null: false
+    t.integer "dwellings"
+    t.geometry "geom", limit: {srid: 28992, type: "multi_polygon"}, null: false
+    t.string "name"
+    t.float "rate"
+    t.datetime "updated_at", null: false
+    t.integer "woz"
+    t.index ["code"], name: "index_neighbourhoods_on_code", unique: true
+    t.index ["geom"], name: "index_neighbourhoods_on_geom", using: :gist
   end
 
   create_table "places", force: :cascade do |t|

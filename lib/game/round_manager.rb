@@ -75,7 +75,7 @@ module Game
     def hit(player_id, hits)
       @mutex.synchronize do
         return unless @round&.running? && @players[player_id]
-        hits.each { |key, damage, max| (obj = @round.hit(key, damage, max)) && @dirty[obj.key] = obj }
+        hits.each { |key, damage, max, woz| (obj = @round.hit(key, damage, max, woz)) && @dirty[obj.key] = obj }
       end
     end
 
@@ -108,7 +108,8 @@ module Game
           when :ended        then now >= @round.next_at && (@players.any? ? msgs << start_vote(now) : @round = nil)
           end
         end
-        msgs << { type: "object", list: @dirty.values.map { @round.obj_h(_1) } } if @dirty.any?
+        # the running euro total rides with the verdicts, which is exactly when it moves
+        msgs << { type: "object", list: @dirty.values.map { @round.obj_h(_1) }, damage: @round.damage.round } if @dirty.any?
         @dirty.clear
         msgs.compact
       end
