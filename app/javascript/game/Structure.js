@@ -449,7 +449,7 @@ export function collector(colour) {
     return b
   }
   const at = new Map()
-  let box = null
+  let box = null, obb = null, id = 0
   const P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], N = new THREE.Vector3()
   const place = (basis, [u, v, d], out) =>
     out.set(basis.u.x * u + basis.v.x * v + basis.n.x * d,
@@ -459,6 +459,16 @@ export function collector(colour) {
   const emit = {
     tri(mat, basis, a, b, c) {
       const t = bucket(mat)
+      // the piece's own box, tracked in the plane it was built in: a wall panel is a thin slab standing on its edge,
+      // and an axis-aligned box round it would be a poor collider on any street that does not run north-south
+      if (obb) {
+        if (!obb.basis) obb.basis = basis
+        for (const q of [a, b, c]) {
+          if (q[0] < obb.u0) obb.u0 = q[0]; if (q[0] > obb.u1) obb.u1 = q[0]
+          if (q[1] < obb.v0) obb.v0 = q[1]; if (q[1] > obb.v1) obb.v1 = q[1]
+          if (q[2] < obb.d0) obb.d0 = q[2]; if (q[2] > obb.d1) obb.d1 = q[2]
+        }
+      }
       place(basis, a, P[0]); place(basis, b, P[1]); place(basis, c, P[2])
       N.copy(P[1]).sub(P[0]).cross(_p.copy(P[2]).sub(P[0]))
       if (N.lengthSq() < 1e-12) return
@@ -478,15 +488,18 @@ export function collector(colour) {
       at.clear()
       for (const [name, b] of buckets) at.set(name, b.pos.length / 3)
       box = new THREE.Box3()
+      obb = { basis: null, u0: Infinity, u1: -Infinity, v0: Infinity, v1: -Infinity, d0: Infinity, d1: -Infinity }
     },
     end(piece) {
+      piece.id = id++
       piece.ranges = []
       for (const [name, b] of buckets) {
         const start = at.get(name) ?? 0, count = b.pos.length / 3 - start
         if (count) piece.ranges.push({ name, start, count })
       }
       piece.box = box.isEmpty() ? null : box
-      box = null
+      piece.obb = obb?.basis ? obb : null
+      box = null; obb = null
     },
     buckets,
   }

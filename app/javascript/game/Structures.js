@@ -3,6 +3,7 @@ import { TUNING as T } from "game/Tuning"
 import { buildStructure, collector } from "game/Structure"
 import { buildingMaterial } from "game/BuildingTextures"
 import { buildingPalette as palette } from "game/BuildingMeshes"
+import { graphOf, unsupported } from "game/Support"
 
 // Which houses are built rather than painted, and when they change over.
 //
@@ -15,13 +16,16 @@ import { buildingPalette as palette } from "game/BuildingMeshes"
 // under a millisecond budget — because converting a house is a couple of milliseconds and a city centre holds a
 // hundred of them inside eighty metres.
 export class Structures {
-  constructor(scene, index, chunks) {
+  constructor(scene, index, chunks, physics) {
     this.scene = scene
     this.index = index
     this.chunks = chunks
+    this.physics = physics
     this.built = new Map()                    // key → { obj, group, pieces, geos }
     this.queue = []
-    this.stats = { built: 0, pieces: 0, buildMs: 0, queued: 0 }
+    this.falling = new Set()                  // buildings with a piece missing, waiting for the flood fill
+    this.onDamage = null                      // set by game.js: a broken piece counts against the building's hp
+    this.stats = { built: 0, pieces: 0, buildMs: 0, queued: 0, fell: 0 }
   }
 
   update(car) {
@@ -47,6 +51,7 @@ export class Structures {
     }
     this.stats.buildMs = performance.now() - t0
     this.stats.queued = this.queue.length
+    this.settle()
   }
 
   build(obj) {
@@ -73,15 +78,47 @@ export class Structures {
     obj.hide?.()
     obj.detail?.hide?.()
     this.scene.add(group)
-    this.built.set(obj.key, { obj, group, pieces, geos })
+    const entry = { obj, group, pieces, geos }
+    graphOf(entry)                                  // who holds whom up, before anything can be taken away
+    this.built.set(obj.key, entry)
+    this.physics?.attach(entry)                     // a standing piece is something the car can hit
     this.stats.built = this.built.size
     this.stats.pieces += pieces.length
     this.stats.buildMs = performance.now() - t0
   }
 
+  // A piece comes off — the car went through it, a rocket found it — and then everything it was holding up comes
+  // down after it, a few a frame so a block reads as a collapse rather than a single frame of everything vanishing.
+  break(entry, piece, vx = 0, vy = 0, vz = 0) {
+    if (!entry.standing?.has(piece)) return 0
+    entry.standing.delete(piece)
+    this.physics?.breakPiece(entry, piece, vx, vy, vz)
+    this.falling.add(entry)
+    this.onDamage?.(entry.obj, T.physics.pieces.damage * (entry.obj.max / Math.max(1, entry.pieces.length)))
+    return 1
+  }
+
+  // whatever lost its support last frame, let go of it now
+  settle() {
+    if (!this.falling.size) return
+    let budget = T.physics.pieces.perFrame
+    for (const entry of [...this.falling]) {
+      const loose = unsupported(entry)
+      if (!loose.length) { this.falling.delete(entry); continue }
+      for (const piece of loose) {
+        if (budget-- <= 0) return
+        entry.standing.delete(piece)
+        this.physics?.breakPiece(entry, piece, 0, -0.5, 0)
+        this.stats.fell++
+      }
+    }
+  }
+
   drop(key) {
     const entry = this.built.get(key)
     if (!entry) return
+    this.physics?.detach(entry)
+    this.falling.delete(entry)
     if (entry.group) {
       this.scene.remove(entry.group)
       for (const geo of entry.geos.values()) geo.dispose()

@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { distTo } from "game/Destructibles"
 import { softTexture } from "game/Effects"
+import { TUNING as T } from "game/Tuning"
 
 // What the player's vehicle does to the world: ramming, driving over rubble, and the tricks on E: the trike's
 // missiles, the monster truck's jump and the bulldozer's blade. Everything here is local prediction plus messages:
@@ -16,13 +17,15 @@ const finMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 
 let flameMat = null
 
 export class Combat {
-  constructor({ scene, index, effects, heightAt, car, send }) {
+  constructor({ scene, index, effects, heightAt, car, send, structures, physics }) {
     this.scene = scene
     this.index = index
     this.effects = effects
     this.heightAt = heightAt
     this.car = car
     this.send = send
+    this.structures = structures    // the houses built out of pieces: what the car can go through rather than off
+    this.physics = physics
     this.pending = new Map()        // key → { damage, max } since the last flush
     this.lastRam = new WeakMap()    // object → time of the last ram, so a car resting against it does not hammer it
     this.enabled = false            // only while a round is running
@@ -53,6 +56,34 @@ export class Combat {
       const flank = Math.abs(nx * rx + nz * rz) > Math.abs(nx * f.x + nz * f.z)               // the wall faces the side, not the nose
       if (obj.state === 1) { car.speed *= 1 - 2.5 * dt; this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
       if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { car.speed *= 1 - 1.5 * dt; this.queue(obj, spec.ram * v * 10 * dt); this.effects.shake(0.05); break }
+      const into0 = -(car.vx * nx + car.vz * nz)
+      // A house built out of pieces is not a footprint any more. hitPoint still answers with the outline BAG
+      // surveyed, but what is actually in the way is whatever panels are still standing there — so ask the physics
+      // world, and if the wall at this spot has already gone, drive on through the hole.
+      const entry = this.structures?.get(obj.key)
+      if (entry) {
+        const here = this.physics.near(px, car.y + 0.7, pz, T.physics.smash.reach).filter((h) => h.entry === entry)
+        if (!here.length) continue                                     // the wall that stood here is gone: drive on
+        // inside a house there is nowhere to be pushed out to: what is left slows you down instead
+        if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
+          let n = 0
+          for (const h of here) {
+            if (n >= T.physics.smash.maxPanels) break
+            n += this.structures.break(entry, h.piece, car.vx * T.physics.smash.shove, 1.5, car.vz * T.physics.smash.shove)
+          }
+          if (n) {
+            car.speed = Math.sign(car.speed || 1) * Math.max(T.physics.smash.exit, Math.abs(car.speed) - n * T.physics.smash.loss)
+            car._speedOut = car.speed                                  // or Vehicle.integrate kills the drift next frame
+            this.queue(obj, spec.ram * 0.25 * into0 * into0 + n * T.physics.smash.damage)
+            this.effects.dust(px, car.y + 0.8, pz, 1.2 + n * 0.3)
+            this.effects.shake(Math.min(0.5, into0 / 40))
+            break
+          }
+        }
+        car.speed *= 1 - T.physics.smash.grind * dt                    // too slow to break it: grind against it
+        this.queue(obj, spec.ram * Math.abs(car.speed) * 2 * dt)
+        break
+      }
       car.x += nx * depth; car.z += nz * depth
       const into = -(car.vx * nx + car.vz * nz)                                              // speed into the wall
       if (into <= 0) continue
@@ -175,6 +206,18 @@ export class Combat {
   explode(x, y, z, r, dmg, own = true, shove = true) {
     this.effects.explosion(x, y, z, r)
     if (own) this.index.near(x, z, r, (obj) => this.queue(obj, dmg * (1 - 0.5 * distTo(x, z, obj) / r)))
+    // A blast against a house that is built out of pieces takes the pieces, not just the hit points. This runs for
+    // everybody's rockets, not only your own: the hole is cosmetic, and two players seeing the same hole is worth
+    // more than being strict about whose damage it was.
+    if (this.physics?.world) {
+      const blast = T.physics.blast
+      for (const { entry, piece } of this.physics.near(x, y, z, r * blast.reach)) {
+        const c = piece.world
+        const dx = c.cx - x, dy = c.cy - y, dz = c.cz - z, d = Math.hypot(dx, dy, dz) || 1
+        const k = blast.push * (1 - Math.min(1, d / (r * blast.reach)))
+        this.structures.break(entry, piece, dx / d * k, Math.abs(dy / d) * k + 2, dz / d * k)
+      }
+    }
     const car = this.car
     if (!car || !shove) return
     const d = Math.hypot(car.x - x, car.z - z)

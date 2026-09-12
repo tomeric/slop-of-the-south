@@ -25,7 +25,11 @@ const GROUP = {                                       // (what I am << 16) | (wh
   solid: (2 << 16) | 4,
   debris: (4 << 16) | 15,
   car: (8 << 16) | 4,
+  // what a shape query says it is, so that it matches the standing pieces: a query only hits a collider when each
+  // side's membership is in the other's filter
+  query: (4 << 16) | 15,
 }
+const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 const CHIP_COLOURS = [0x9a9186, 0x8a8078, 0xa89c8c, 0x77706a, 0xb0a595]
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4()
 const _q2 = new THREE.Quaternion()
@@ -40,6 +44,8 @@ export class Physics {
     this.tiles = new Map()                            // tile key → the heightfield body
     this.waiting = []                                 // tiles that arrived while the engine was still loading
     this.chips = []                                   // the pool: every dynamic body in the world today
+    this.pieces = new Map()                           // collider handle → { entry, piece } for everything standing
+    this.moving = new Set()                           // the pieces that have come loose and are still moving
     this.acc = 0
     this.alpha = 0
     this.next = 0                                     // round-robin over the pool
@@ -177,6 +183,109 @@ export class Physics {
     chip.body.setAngvel({ x: 0, y: 0, z: 0 }, false)
   }
 
+  // ---- the buildings that are built out of pieces -----------------------------------------------------------
+
+  // Every standing piece is a static box on one fixed body per building, so the car has something to hit and a
+  // rocket has something to find. The pieces stay part of their building's merged geometry until one of them comes
+  // loose, which is what keeps this affordable: thousands of colliders, no extra draw calls.
+  attach(entry) {
+    if (!this.world || entry.body) return
+    const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed())
+    entry.body = body
+    entry.live = new Map()                                        // piece → its dynamic slot, once it comes loose
+    for (const piece of entry.pieces) {
+      if (!piece.obb) continue
+      const w = worldBox(piece.obb)
+      const col = this.world.createCollider(this.R.ColliderDesc.cuboid(w.hx, w.hy, w.hz)
+        .setTranslation(w.cx, w.cy, w.cz).setRotation(w.q).setCollisionGroups(GROUP.solid), body)
+      piece.world = w
+      piece.collider = col.handle
+      this.pieces.set(col.handle, { entry, piece })
+    }
+  }
+
+  detach(entry) {
+    if (!this.world || !entry.body) return
+    for (const piece of entry.pieces) {
+      if (piece.collider != null) this.pieces.delete(piece.collider)
+      piece.collider = null
+      const slot = entry.live?.get(piece)
+      if (slot) { this.world.removeRigidBody(slot.body); this.moving.delete(slot) }
+    }
+    this.world.removeRigidBody(entry.body)
+    entry.body = null
+    entry.live = null
+  }
+
+  // A piece comes off: its static box goes, a dynamic one takes its place at the same spot, and its triangles stay
+  // where they are in the building's geometry — they are simply rewritten from the body's transform every frame.
+  // The body is made with no rotation and the box carries the orientation instead, so the rest position of every
+  // vertex is just "where it already is, relative to the centre", with no inverse rotation anywhere.
+  breakPiece(entry, piece, vx = 0, vy = 0, vz = 0) {
+    if (!this.world || !piece.obb || entry.live?.has(piece)) return null
+    if (this.moving.size >= T.physics.pieces.max) return null
+    const w = piece.world ?? worldBox(piece.obb)
+    if (piece.collider != null) { this.world.removeCollider(this.world.getCollider(piece.collider), false); this.pieces.delete(piece.collider); piece.collider = null }
+    const body = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic()
+      .setTranslation(w.cx, w.cy, w.cz).setLinearDamping(T.physics.debris.linear).setAngularDamping(T.physics.debris.angular)
+      .setCcdEnabled(true))
+    this.world.createCollider(this.R.ColliderDesc.cuboid(w.hx, w.hy, w.hz).setRotation(w.q)
+      .setDensity(T.physics.debris.density).setFriction(T.physics.debris.friction)
+      .setRestitution(T.physics.debris.bounce).setCollisionGroups(GROUP.debris), body)
+    body.setLinvel({ x: vx, y: vy, z: vz }, true)
+    body.setAngvel({ x: (Math.random() - 0.5) * 3, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 3 }, true)
+    const slot = { body, entry, piece, rest: restOf(entry, piece, w), born: performance.now(), asleep: false }
+    entry.live.set(piece, slot)
+    this.moving.add(slot)
+    return slot
+  }
+
+  // Which standing pieces are within r of a point. One broad-phase query rather than a walk over every piece of
+  // every building, which is what the car needs at 40 m/s and what a rocket needs over its blast radius.
+  near(x, y, z, r) {
+    const out = []
+    if (!this.world) return out
+    this.world.intersectionsWithShape({ x, y, z }, IDENTITY, this.ball(r), (col) => {
+      const found = this.pieces.get(col.handle)
+      if (found) out.push(found)
+      return out.length < 24
+    }, undefined, GROUP.query)
+    return out
+  }
+
+  ball(r) {
+    if (!this._ball || this._ballR !== r) { this._ball = new this.R.Ball(r); this._ballR = r }
+    return this._ball
+  }
+
+  // the moving pieces, written back into the geometry they never left
+  writePieces() {
+    if (!this.moving.size) return
+    const dirty = new Set()
+    for (const slot of this.moving) {
+      if (slot.asleep) continue
+      const t = slot.body.translation(), r = slot.body.rotation()
+      _q.set(r.x, r.y, r.z, r.w)
+      _m.makeRotationFromQuaternion(_q).setPosition(t.x, t.y, t.z)
+      for (const part of slot.rest) {
+        const attr = part.attr, base = part.start * 3
+        for (let i = 0; i < part.rest.length; i += 3) {
+          _v.set(part.rest[i], part.rest[i + 1], part.rest[i + 2]).applyMatrix4(_m)
+          attr.array[base + i] = _v.x; attr.array[base + i + 1] = _v.y; attr.array[base + i + 2] = _v.z
+        }
+        attr.needsUpdate = true
+        dirty.add(attr)
+      }
+      // settled: write it one last time, freeze it where it lies and stop paying for it every frame. It still
+      // collides — a heap of fallen wall is something to drive into — but it is no longer simulated.
+      if (slot.body.isSleeping()) {
+        slot.asleep = true
+        slot.body.setBodyType(this.R.RigidBodyType.Fixed, false)
+        this.moving.delete(slot)
+      }
+    }
+  }
+
   // ---- the car --------------------------------------------------------------------------------------------------
 
   // A kinematic box: it pushes debris at the speed it is really travelling and debris cannot push it back. The size
@@ -228,7 +337,7 @@ export class Physics {
       steps++
     }
     this.alpha = T.physics.interpolate ? this.acc / h : 1
-    if (steps) this.retire()
+    if (steps) { this.retire(); this.writePieces() }
     this.draw()
     this.stats.steps = steps
     this.stats.stepMs = performance.now() - t0
@@ -297,3 +406,42 @@ export class Physics {
     for (const chip of this.chips) if (chip.live) this.free(chip)
   }
 }
+
+// ---- the shape of a piece ---------------------------------------------------------------------------------------
+
+// A piece's oriented box in world terms: where its centre is, how big it is, and which way it is turned. The box is
+// built in the plane the piece was made in (u along the wall, v up, n out of it), so a panel on a street that does
+// not run north-south still gets a collider that lies flat against it.
+function worldBox(obb) {
+  _mm.makeBasis(obb.basis.u, obb.basis.v, obb.basis.n)
+  const q = _qq.setFromRotationMatrix(_mm)
+  const u = (obb.u0 + obb.u1) / 2, v = (obb.v0 + obb.v1) / 2, d = (obb.d0 + obb.d1) / 2
+  return {
+    cx: obb.basis.u.x * u + obb.basis.v.x * v + obb.basis.n.x * d,
+    cy: obb.basis.u.y * u + obb.basis.v.y * v + obb.basis.n.y * d,
+    cz: obb.basis.u.z * u + obb.basis.v.z * v + obb.basis.n.z * d,
+    hx: Math.max(0.02, (obb.u1 - obb.u0) / 2), hy: Math.max(0.02, (obb.v1 - obb.v0) / 2),
+    hz: Math.max(0.02, (obb.d1 - obb.d0) / 2),
+    q: { x: q.x, y: q.y, z: q.z, w: q.w },
+  }
+}
+
+// where every vertex of a piece sits relative to its own centre, taken once, the moment it comes loose
+function restOf(entry, piece, w) {
+  const out = []
+  for (const range of piece.ranges) {
+    const geo = entry.geos?.get(range.name)
+    if (!geo) continue
+    const attr = geo.attributes.position
+    const rest = new Float32Array(range.count * 3)
+    for (let i = 0; i < range.count * 3; i += 3) {
+      rest[i] = attr.array[range.start * 3 + i] - w.cx
+      rest[i + 1] = attr.array[range.start * 3 + i + 1] - w.cy
+      rest[i + 2] = attr.array[range.start * 3 + i + 2] - w.cz
+    }
+    out.push({ attr, start: range.start, rest })
+  }
+  return out
+}
+
+const _mm = new THREE.Matrix4(), _qq = new THREE.Quaternion()

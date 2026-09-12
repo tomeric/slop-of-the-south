@@ -93,13 +93,16 @@ async function main() {
   const input   = new Input()
   const car     = new Vehicle(config.spawn, vehicleSpec(localStorage.getItem("voertuig") ?? "trike"))
   let carFx     = new VehicleFx(car.mesh, effects.smoke)
-  const combat  = new Combat({ scene: world.scene, index, effects, heightAt: (x, z) => chunks.heightAt(x, z), car, send: (action, data) => { if (vrij) { if (action === "hit") localHit(data); return } net.send(action, data) } })
+  const structures = new Structures(world.scene, index, chunks, physics)   // the houses near enough to be built of pieces
+  const combat  = new Combat({ scene: world.scene, index, effects, structures, physics, heightAt: (x, z) => chunks.heightAt(x, z), car, send: (action, data) => { if (vrij) { if (action === "hit") localHit(data); return } net.send(action, data) } })
   const remotes = new RemoteCars(world.scene, effects.smoke)
   const dayNight = new DayNight(world)
   const environment = new Environment(world)                // the ambient light, baked from the sky every couple of seconds
   const shadows = new Shadows(world)                        // the sun's shadow box, hung on the camera (?schaduw)
   const facades = new Facades(world.scene, index, chunks)   // plinths, sills, gutters and doors on the houses nearby
-  const structures = new Structures(world.scene, index, chunks)   // and, nearer still, the houses built out of pieces
+  // a panel broken off a house counts against the same hit points ramming it would, so demolishing it by hand and
+  // driving into it end in the same place as far as the server is concerned
+  structures.onDamage = (obj, dmg) => combat.queue(obj, dmg)
   const parade  = new Parade(world.scene)
   const loading = new LoadingScreen(el("laden"))
   const music   = new Music(el("muziek"))

@@ -157,6 +157,7 @@ comes from `localStorage.driverName`, settable with `?name=Pietje`.
     game/Physics.js          the rigid-body world: terrain colliders, the debris pool, the car as a kinematic box
     game/Structure.js        one building → pieces: panels with real openings, floors, partitions, stairs, roof
     game/Structures.js       which houses are built rather than painted, and the swap between the two
+    game/Support.js          which piece holds which up, and what falls when one of them goes
     game/Bench.js            ?bench=bos|dorp|veld: frame cost at a fixed spot
     game/Surfaces.js         the surveyed BGT road, footway, parking and driveway outlines, draped and kerbed
     game/Bridges.js          decks with a fascia and a soffit, parapets, railings, abutments and piers
@@ -365,6 +366,28 @@ a seam appearing wherever two cells meet.
 Cost at the densest village tile: 37 buildings, ~6 600 pieces, 204 k triangles, about 2 ms to convert a house.
 Draw calls are the weak point — one mesh per material per building, +175 on a 790 baseline — which is what
 `maxBuildings` caps until the pieces move into one shared buffer per material.
+
+**Taking a house apart.** Every standing piece is a static box in the physics world, on one fixed body per building,
+so the car and the rocket have something to find. Break one — drive through it above `T.physics.smash.speed`, or put
+a rocket in it — and its box is swapped for a dynamic one at the same spot, while its triangles stay exactly where
+they are in the building's geometry and are rewritten each frame from the body's transform: a falling wall panel
+still looks like the panel it was, and it costs no extra draw call. When it settles it is frozen where it lies and
+stops being simulated, but keeps colliding.
+
+Then `game/Support.js` answers the question that matters: what was that piece holding up? Every piece knows what
+rests on it and what it rests on, the ones on the ground are roots, and after anything is taken away a flood fill
+from the roots says which pieces can no longer be reached. Those let go, a couple of dozen a frame so a house reads
+as coming down rather than vanishing. Two panels side by side on the same storey deliberately do **not** hold each
+other up — if they did, the graph would stay connected sideways and nothing above a hole would ever fall. Measured
+on a five-storey terrace: knock out the twenty-one panels of its ground floor and fifty-four more come down after
+them, and nothing is left standing that has no path to the ground.
+
+Driving into one is its own rule. `hitPoint` still answers with the footprint BAG surveyed, so a built building asks
+the physics world what is actually in the way at the contact point: no panel there any more and the car drives on
+through the hole; a panel there and you are fast enough, you break it and lose `smash.loss` of speed for it; too
+slow and you grind against it rather than being fired back out of a house you are already inside. Each broken piece
+also feeds its share of the building's hit points into the same queue ramming does, so demolishing a house by hand
+and driving into it end in the same place as far as the server is concerned.
 
 **Physics** (`game/Physics.js`): a Rapier world — Rust compiled to WebAssembly, vendored as one file the way three
 is — carries everything that falls. Each tile hands it a 51 × 51 heightfield collider (transposed on the way in:

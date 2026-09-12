@@ -110,6 +110,14 @@ export const TUNING = {
     warpJump: 12,                             // the car moving further than this in one frame is a teleport, not driving
     debris: { density: 900, friction: 0.9, bounce: 0.05, linear: 0.05, angular: 0.4, maxFall: 11 },   // maxFall x step must stay well under the smallest chip
     chips: { pool: 220, size: 0.5, speed: 7, life: 30 },   // pool: reload (the bodies are made once)
+    pieces: { max: 160, perFrame: 24, damage: 1.4 },   // in the air at once, how many may let go per frame, and
+                                              // how hard breaking one counts against the building's own hit points
+    // what holds what up (game/Support.js): weld is how far apart two pieces may be and still touch, slack how far
+    // a supporter's top may overshoot, overhang how far a floor may hang past whatever is left under it
+    support: { weld: 0.15, slack: 0.4, groundBite: 0.4, overhang: 2.5 },
+    // driving through a wall rather than off it: how fast you have to be, what each panel costs you, and the floor
+    smash: { speed: 9, exit: 4, loss: 0.7, reach: 1.0, maxPanels: 3, shove: 0.35, damage: 4, grind: 2.5 },
+    blast: { reach: 0.8, push: 7 },           // a rocket takes the pieces within this much of its radius with it
   },
   sky: { clouds: { cover: 0.42, scale: 2.6, speed: 0.01 } },             // a noise band on the sky dome; cover 0 turns it off (live)
   trees: { jitter: { hue: 0.07, sat: 0.5, pale: 0.6, level: 1.14, light: 0.26 } },   // a wood is not one tree stamped a thousand times (reload)
