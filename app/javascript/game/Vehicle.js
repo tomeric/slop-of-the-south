@@ -287,6 +287,7 @@ export class Vehicle {
 
   state() {
     return { x: this.x, y: this.y, z: this.z, yaw: this.yaw, pitch: this.pitch, roll: this.roll,
-             speed: this.speed, brake: this.braking, drift: this.smoking, boost: this.boostPower > 0.3, vehicle: this.spec.id }
+             speed: this.speed, brake: this.braking, drift: this.smoking, boost: this.boostPower > 0.3,
+             thrust: !!this.thrusting, vehicle: this.spec.id }
   }
 }

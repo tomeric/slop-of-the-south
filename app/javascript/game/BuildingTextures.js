@@ -187,21 +187,30 @@ export function buildingMaterial(name) {
     })
     if (on) lit.push(m)
   } else if (name === "glas") {
-    // the one surface with no texture on it: what you see through it is the sky the environment map is carrying,
-    // and after dark the room behind it. The glass itself does not glow — a window is not a lamp.
-    m = new THREE.MeshStandardMaterial({ color: 0x8fa7b8, vertexColors: true, roughness: 0.08, metalness: 0.5 })
+    // The one surface with no texture on it: what you see is the sky the environment map is carrying, and behind
+    // that the room. It has to be see-through to be a window at all — opaque glass hides the lit room completely,
+    // which is exactly how a headlight appeared to switch a house's lights off: the pane it was lighting went
+    // blue-grey and the warm room behind it was never drawn. The room panel is opaque, so it lands in the opaque
+    // pass first and this blends over it.
+    m = new THREE.MeshStandardMaterial({ color: 0x8fa7b8, vertexColors: true, roughness: 0.1, metalness: 0.35,
+      transparent: true, opacity: 0.42 })
   } else if (name === "kamer") {
     // The room behind the window, which is where the light actually comes from. Its vertex colour is not a colour:
     // red carries the room's own phase and green how bright it wants to be, both fixed for the life of the house,
     // and the shader below decides from them whether the light is on. A window is lit when its green clears the
     // threshold — so a fixed share of rooms are dark — and the few sitting within `swing` of it cross over as the
     // clock comes round, which is the tenth of the street that turns a light on or off while you watch.
-    m = new THREE.MeshStandardMaterial({ color: 0x000000, vertexColors: true, roughness: 1,
+    // It is a room, so it takes light like one: shine a headlight through the window and the far wall lights up
+    // instead of staying a black hole, which is what a pure-black panel did — the brick around the opening lit up,
+    // the opening did not, and the window read as having been switched off by the torch.
+    m = new THREE.MeshStandardMaterial({ color: 0x6b6058, vertexColors: true, roughness: 1,
       emissive: 0xffca6e, emissiveIntensity: 0, side: THREE.FrontSide })
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uRoom = roomClock
       shader.fragmentShader = shader.fragmentShader
         .replace("#include <common>", "#include <common>\nuniform vec3 uRoom;   // x: clock, y: threshold, z: swing")
+        // the vertex colour here is this room's two numbers, not a colour: keep it out of the diffuse
+        .replace("#include <color_fragment>", "")
         .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
           float breathe = 0.5 + 0.5 * sin(uRoom.x + vColor.r * 6.2831853);
           float on = step(uRoom.y, vColor.g + uRoom.z * (breathe - 0.5));

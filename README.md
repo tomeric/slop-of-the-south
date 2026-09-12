@@ -409,7 +409,9 @@ phase and green how bright it wants to be, both fixed for the life of the house,
 from the two whether the light is on. A room is lit when its green clears `rooms.threshold`, so a fixed share stay
 dark all night; the few sitting within `rooms.swing` of the line cross over as the clock comes round. Measured over
 1 476 rooms in 37 houses: 54 % lit at any moment, and 9.3 % of them turn a light on or off over the course of a
-night. It costs one uniform and no CPU at all.
+night. It costs one uniform and no CPU at all. The glass in front of it had to become see-through for any of that
+to be visible — an opaque pane hides the room completely, which is how a headlight appeared to switch a house's
+lights off: the pane it was lighting went blue-grey and the lit room behind it was never drawn at all.
 
 **What a hit costs.** Damage is the kinetic energy the vehicle actually delivers: `k × ½ m v²` along the contact
 normal, so doubling your speed does four times the damage and a bulldozer slowed to walking pace stops being a

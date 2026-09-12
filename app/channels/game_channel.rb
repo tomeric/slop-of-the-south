@@ -20,7 +20,8 @@ class GameChannel < ApplicationCable::Channel
     broadcast(type: "leave")
   end
 
-  # data: { x, y, z, yaw, speed, brake, drift, boost, vehicle } — drift/boost drive the smoke and flames on other screens
+  # data: { x, y, z, yaw, pitch, roll, speed, brake, drift, boost, thrust, vehicle } — drift, boost and thrust
+  # drive the smoke and flames on other screens, and pitch/roll are there because a real chassis rolls over
   def move(data)
     return unless allowed?("move")
     vehicle = data["vehicle"].to_s.first(16)
@@ -28,8 +29,9 @@ class GameChannel < ApplicationCable::Channel
     broadcast(
       type: "move", name: @name, vehicle:,
       x: data["x"].to_f, y: data["y"].to_f, z: data["z"].to_f,
-      yaw: data["yaw"].to_f, speed: data["speed"].to_f, brake: data["brake"] == true,
-      drift: data["drift"] == true, boost: data["boost"] == true,
+      yaw: data["yaw"].to_f, pitch: data["pitch"].to_f, roll: data["roll"].to_f,
+      speed: data["speed"].to_f, brake: data["brake"] == true,
+      drift: data["drift"] == true, boost: data["boost"] == true, thrust: data["thrust"] == true,
       t: Game.now_ms
     )
   end

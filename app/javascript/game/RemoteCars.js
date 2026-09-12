@@ -53,9 +53,10 @@ export class RemoteCars {
     }
     car.name = msg.name || "Chauffeur"
     if (!!msg.brake !== car.brake) { car.brake = !!msg.brake; this.relight(car) }
-    car.drift = !!msg.drift; car.boost = !!msg.boost
+    car.drift = !!msg.drift; car.boost = !!msg.boost; car.thrust = !!msg.thrust
     car.lastSeen = performance.now()
-    car.buf.push({ t: performance.now(), x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, speed: msg.speed ?? 0 })
+    car.buf.push({ t: performance.now(), x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw,
+                   pitch: msg.pitch ?? 0, roll: msg.roll ?? 0, speed: msg.speed ?? 0 })
     if (car.buf.length > 20) car.buf.shift()
   }
 
@@ -73,15 +74,17 @@ export class RemoteCars {
       const k = c.t === a.t ? 1 : THREE.MathUtils.clamp((renderT - a.t) / (c.t - a.t), 0, 1)
       const x = a.x + (c.x - a.x) * k, y = a.y + (c.y - a.y) * k, z = a.z + (c.z - a.z) * k
       const yaw = lerpAngle(a.yaw, c.yaw, k), speed = a.speed + (c.speed - a.speed) * k
+      // a real chassis rolls over, so the attitude travels with the position or everyone else drives about flat
+      const pitch = lerpAngle(a.pitch ?? 0, c.pitch ?? 0, k), roll = lerpAngle(a.roll ?? 0, c.roll ?? 0, k)
       car.mesh.position.set(x, y, z)
-      car.mesh.rotation.y = yaw
+      car.mesh.rotation.set(pitch, yaw, roll, "YXZ")
       // wheels: spin with the reported speed, front wheels turned by the yaw rate between the two samples
       car.wheelAngle += speed / T.susp.wheelRadius * dt
       const yawRate = c.t === a.t ? 0 : wrapAngle(c.yaw - a.yaw) / ((c.t - a.t) / 1000)
       const steer = Math.abs(speed) > 1 ? THREE.MathUtils.clamp(Math.atan(yawRate * 2.6 / speed), -0.6, 0.6) : 0
       for (const w of car.mesh.userData.wheels ?? []) { w.mesh.rotation.x = -car.wheelAngle; w.pivot.rotation.y = w.front ? steer : 0 }
       const f = { x: -Math.sin(yaw), z: -Math.cos(yaw) }
-      car.fx.update({ smoking: car.drift, boostPower: car.boost ? 1 : 0, vx: f.x * speed, vz: f.z * speed }, dt)
+      car.fx.update({ smoking: car.drift, boostPower: car.boost ? 1 : 0, vx: f.x * speed, vz: f.z * speed, thrusting: car.thrust }, dt)
       if (local && camera) placeBeacon(car.beacon, x, y, z, car.name, local, camera)
     }
   }
