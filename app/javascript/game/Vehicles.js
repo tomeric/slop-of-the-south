@@ -11,7 +11,7 @@ import { casts } from "game/Shadows"
 export const VEHICLES = [
   { id: "trike", naam: "Trike", blurb: "Snel en wendbaar. Eén raket per druk op E, tien op een volle turbometer \u2014 en zwiep met de handrem je stormram naar achteren tegen een muur.",
     maxSpeed: 32, accel: 11, brakeForce: 20, maxSteer: 0.6, wheelbase: 1.9, track: 1.4, length: 2.6,
-    side: 1, bottom: 1, rear: 8, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },   // rear: the ram, mid-drift
+    side: 1, bottom: 1, rear: 20, clear: 0.4, push: false, pushMin: 0, cam: { dist: 0.95, height: 0.95 },   // rear: the ram, mid-drift
     mass: 350, com: 0.45, grip: 1.0, bite: 0.25,           // kg, centre of mass above the contact patch
     body: { hx: 0.6, hy: 0.42, hz: 1.1, y: 0.76, z: 0.2 }, // the hull, clear of the ground: the wheels carry the car
     smashMin: 13, smashPanels: 2, smashLoss: 1.4,          // it takes a proper run-up, and the wall takes it out of you

@@ -468,8 +468,16 @@ normal, so doubling your speed does four times the damage and a truck slowed to 
 wrecking ball. Two coefficients sit on top — `bite`, how well the thing is shaped for demolition (a blade
 concentrates its energy, a trike's nose splatters), and which part of you made contact. The monster truck hits
 twice as hard with a flank and **four times** as hard with its underside, so landing flat on a roof is a way to
-play it; and the trike's tail ram hits **eight times** as hard as its nose, but only in a drift — a ram is a thing
-you swing, not a thing you reverse into. A trike nose at 25 m/s does 14; the same trike swinging its ram does 109.
+play it; and the trike's ram hits **twenty times** as hard as its nose, but only in a drift — a ram is a thing you
+swing, not a thing you reverse into, and `drifting` needs forward speed to exist at all. The whole back half counts,
+not just the tail, because a drift puts a rear quarter into the wall long before it puts the bumper there. Measured
+against a built house: swung in on the handbrake at 18 m/s, **296**; reversed into at the same speed, 3; sliding but
+not properly sideways, 0.
+
+Which part of you arrived is worked out once, before the branches, and applies to every one of them. It used to sit
+in the ram branch alone, which is to say it never happened at all: a house near enough to drive into is a house
+built out of pieces, and those are answered further up — so the trike's ram and the truck's flanks were both doing
+nothing whatsoever to real buildings.
 
 **Driving through one.** A chassis that is really there is stopped by a wall the moment it touches one, and a wall
 is several panels thick — so breaking a few at a probe point leaves you stalled against the rest of the house.

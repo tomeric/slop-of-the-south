@@ -153,6 +153,22 @@ export class Combat {
       // so nothing here has to pretend to.
       if (obj.state === 1 || obj.kind === "d") { this.queue(obj, spec.clear * Math.abs(v) * 4 * dt); break }
       const into0 = -(car.vx * nx + car.vz * nz)
+      // Which part of you arrived, worked out once for every branch below. The whole back half counts as the ram,
+      // not just the tail — a drift puts a rear quarter into the wall long before it puts the bumper there — and it
+      // only counts while the car is actually sideways, because a ram is a thing you swing and not a thing you
+      // reverse into. Driving backwards never qualifies: `drifting` needs forward speed to begin with.
+      //
+      // This used to live in the ram branch alone, which is to say it never happened: a house near enough to drive
+      // into is a house built out of pieces, and those are answered further up and left without a multiplier. The
+      // trike's ram and the truck's flanks were both doing nothing at all to real buildings.
+      const swung = car.drifting && nx * f.x + nz * f.z > 0 && Math.abs(car.slip) > T.drift.chargeSlip
+      const mult = swung ? spec.rear ?? 1 : flank ? spec.side ?? 1 : 1
+      const landed = (into) => {
+        if (!swung) return
+        this.effects.shake(Math.min(0.9, 0.3 + into / 24))
+        this.effects.dust(px, car.y + 0.5, pz, 2.6)
+        this.physics?.burst(px, car.y + 0.7, pz, 1.5, T.physics.pieces.chips, "steen")
+      }
       // A house built out of pieces is not a footprint any more. hitPoint still answers with the outline BAG
       // surveyed, but what is actually in the way is whatever panels are still standing there — so ask the physics
       // world, and if the wall at this spot has already gone, drive on through the hole.
@@ -165,9 +181,12 @@ export class Combat {
         // What it takes to go through one is the vehicle's business, not the world's: the truck leans on it at
         // walking pace behind its blade, a trike has to be reckless.
         if (into0 > (spec.smashMin ?? T.physics.smash.speed)) {
-          this.queue(obj, this.energy(car, into0, T.damage.through))    // the panels themselves are plough()'s business
+          this.queue(obj, this.energy(car, into0, mult * T.damage.through))   // the panels are plough()'s business
+          landed(into0)
           break
         }
+        // Swinging a ram into a wall is not "driving through" it, so it does not have to beat smashMin to count.
+        if (swung && this.rammed(obj)) { this.queue(obj, this.energy(car, into0, mult * T.damage.through)); landed(into0) }
         break                                                           // too slow to break it: plough() bills the lean
       }
       if (spec.push && !flank && v > spec.pushMin && nx * f.x + nz * f.z < 0) { this.queue(obj, this.energy(car, v, T.damage.through) * dt * 4); this.effects.shake(0.05); break }
@@ -177,11 +196,8 @@ export class Combat {
       const wx = car.vx + nx * into * 1.2, wz = car.vz + nz * into * 1.2                    // that part reverses to a fifth
       car.speed = wx * f.x + wz * f.z; car.lateral = wx * rx + wz * rz; car.vx = wx; car.vz = wz
       if (into > 2 && this.rammed(obj)) {
-        // Which part of you arrived. A flank is the monster truck's; the back is the trike's ram, and only in a
-        // drift — a ram is a thing you swing, not a thing you reverse into.
-        const backwards = !flank && nx * f.x + nz * f.z > 0
-        const mult = flank ? spec.side ?? 1 : backwards && car.drifting ? spec.rear ?? 1 : 1
         this.queue(obj, this.energy(car, into, mult))
+        landed(into)
         this.effects.dust(px, car.y + 0.6, pz, 1.5)
         this.effects.shake(Math.min(0.6, into / 30))
       }
